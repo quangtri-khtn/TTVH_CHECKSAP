@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ttvh_sap_monitor_db
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

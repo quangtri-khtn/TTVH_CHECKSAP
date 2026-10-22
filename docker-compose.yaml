@@ -1,20 +1,53 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: ttvh-sap-monitor-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: create_project_from_template
+      POSTGRES_DB: ttvh_sap_monitor_db
     ports:
       - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d create_project_from_template"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ttvh_sap_monitor_db"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: ttvh-sap-monitor-api:latest
+    container_name: ttvh-sap-monitor-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ttvh_sap_monitor_db?schema=public
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: ttvh-sap-monitor-web:latest
+    container_name: ttvh-sap-monitor-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   postgres-data:

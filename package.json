@@ -1,5 +1,5 @@
 {
-  "name": "create-project-from-template",
+  "name": "ttvh-sap-monitor",
   "private": true,
   "packageManager": "pnpm@11.2.2",
   "engines": {

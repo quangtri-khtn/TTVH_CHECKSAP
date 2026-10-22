@@ -3,7 +3,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { UsersService } from '../users/users.service';
+import { toUserResponse, UsersService } from '../users/users.service';
 import { AuthSessionsService } from '../auth-sessions/auth-sessions.service';
 import { LoginDto } from './dto/login.dto';
 import { UserResponseDto } from '../users/dto/user-response.dto';
@@ -46,9 +46,6 @@ type RefreshTokenPayload = {
   sub: string;
 };
 
-function toUserResponseDto(user: User): UserResponseDto {
-  return { id: user.id, email: user.email, name: user.name, role: user.role };
-}
 
 @Injectable()
 export class AuthService {
@@ -64,7 +61,7 @@ export class AuthService {
   // from a controller method: TransformInterceptor would serialize it into
   // the JSON body, defeating the point of cookie-only delivery.
   async login(dto: LoginDto): Promise<{ user: UserResponseDto; tokens: TokenBundle }> {
-    const user = await this.usersService.findByEmail(dto.email);
+    const user = await this.usersService.findByEmail(dto.email.toLowerCase());
     if (!user) {
       await argon2.verify(DUMMY_HASH, dto.password);
       throw new UnauthorizedException('Invalid email or password');
@@ -73,9 +70,12 @@ export class AuthService {
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
     }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
 
     const tokens = await this.createSessionAndTokens(user.id);
-    return { user: toUserResponseDto(user), tokens };
+    return { user: toUserResponse(user), tokens };
   }
 
   async me(userId: string | undefined): Promise<UserResponseDto> {

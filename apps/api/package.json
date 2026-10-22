@@ -12,7 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:reset": "prisma migrate reset --force",
     "openapi:generate": "ts-node scripts/generate-openapi.ts",
-    "seed": "ts-node scripts/seed-admin.ts"
+    "seed": "ts-node scripts/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

@@ -13,4 +13,16 @@ export class UserResponseDto {
 
   @ApiProperty({ enum: Role })
   role!: Role;
+
+  @ApiProperty()
+  isActive!: boolean;
+
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty({ type: [String] })
+  customPermissions!: string[];
+
+  @ApiProperty({ type: [String] })
+  permissions!: string[];
 }

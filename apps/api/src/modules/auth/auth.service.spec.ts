@@ -3,6 +3,7 @@ import * as argon2 from 'argon2';
 import { AuthService } from './auth.service';
 import { Role } from '../../generated/prisma/enums';
 import { ARGON2_OPTIONS } from './argon2-options.constant';
+import { makeAuthUser } from '../../test-utils/make-auth-user';
 
 describe('AuthService', () => {
   const usersService = { findByEmail: jest.fn(), findById: jest.fn() };
@@ -61,8 +62,12 @@ describe('AuthService', () => {
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
-        role: Role.TRAINEE,
+        role: Role.EMPLOYEE,
+        isActive: true,
         password: hash,
+        customPermissions: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
       await expect(service.login({ email: 'user@example.com', password: 'wrong-password' })).rejects.toThrow(
         new UnauthorizedException('Invalid email or password'),
@@ -75,14 +80,27 @@ describe('AuthService', () => {
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
-        role: Role.TRAINEE,
+        role: Role.EMPLOYEE,
+        isActive: true,
         password: hash,
+        customPermissions: [],
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       });
       authSessionsService.createSession.mockResolvedValue({});
 
       const result = await service.login({ email: 'user@example.com', password: 'correct-password' });
 
-      expect(result.user).toEqual({ id: 'user-1', email: 'user@example.com', name: 'User', role: Role.TRAINEE });
+      expect(result.user).toEqual({
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'User',
+        role: Role.EMPLOYEE,
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        customPermissions: [],
+        permissions: ['sap-monitor:read'],
+      });
       expect(result.user).not.toHaveProperty('password');
       expect(result.tokens.accessToken).toBe('signed-jwt');
       expect(result.tokens.refreshToken).toBe('signed-jwt');
@@ -102,18 +120,14 @@ describe('AuthService', () => {
     });
 
     it('returns the real user when found', async () => {
-      usersService.findById.mockResolvedValue({
+      const mockUser = makeAuthUser({
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
-        role: Role.TRAINEE,
+        role: Role.EMPLOYEE,
       });
-      await expect(service.me('user-1')).resolves.toEqual({
-        id: 'user-1',
-        email: 'user@example.com',
-        name: 'User',
-        role: Role.TRAINEE,
-      });
+      usersService.findById.mockResolvedValue(mockUser);
+      await expect(service.me('user-1')).resolves.toEqual(mockUser);
     });
   });
 

@@ -1,5 +1,32 @@
 import { z } from 'zod';
 
+// Chuẩn hóa giá trị biến môi trường tùy chọn: cắt khoảng trắng hai đầu,
+// coi chuỗi rỗng như chưa cấu hình (undefined) để áp mặc định hoặc bỏ qua.
+function emptyToUndefined(value: unknown): unknown {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }
+  return value;
+}
+
+// Biểu thức chính quy kiểm tra chuỗi base64 chuẩn (32 byte -> 44 chars)
+// hoặc chuỗi hex 64 ký tự (32 byte).
+const STANDARD_BASE64_REGEX =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const HEX_32_BYTE_REGEX = /^[0-9a-fA-F]{64}$/;
+
+export function isValidSapCredentialKey(val: string): boolean {
+  if (HEX_32_BYTE_REGEX.test(val)) {
+    return true;
+  }
+  return (
+    val.length > 0 &&
+    STANDARD_BASE64_REGEX.test(val) &&
+    Buffer.from(val, 'base64').byteLength === 32
+  );
+}
+
 // Validates only the env vars this app actually reads. Every var here has a
 // default matching the same fallback already hardcoded in code
 // (JwtStrategy/AccessControlModule use 'dev-placeholder-secret'), so this
@@ -15,9 +42,36 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  ALLOW_INSECURE_HTTP: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   PORT: z.coerce.number().int().positive().default(3001),
   WEB_ORIGIN: z.string().min(1).default('http://localhost:3000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .default('postgresql://postgres:postgres@localhost:5433/ttvh_sap_monitor_db?schema=public'),
+  LOG_PRETTY: z.string().optional(),
+  SAP_SQL_HOST: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  SAP_SQL_PORT: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(65535).default(1433),
+  ),
+  SAP_CREDENTIAL_KEY: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .refine(
+        isValidSapCredentialKey,
+        {
+          message:
+            'SAP_CREDENTIAL_KEY phải là chuỗi 64 ký tự hex hoặc chuỗi base64 giải mã ra đúng 32 byte',
+        },
+      )
+      .optional(),
+  ),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -62,9 +116,22 @@ export function validateEnv(config: Record<string, unknown>): AppEnv {
   // refresh token) get sent over plain HTTP with no Secure flag. Same class
   // of mistake as booting production with a default JWT secret — refuse
   // to boot rather than silently ship a session-hijackable cookie.
-  if (result.data.NODE_ENV === 'production' && !result.data.AUTH_COOKIE_SECURE) {
+  if (
+    result.data.NODE_ENV === 'production' &&
+    !result.data.AUTH_COOKIE_SECURE &&
+    !result.data.ALLOW_INSECURE_HTTP
+  ) {
     throw new Error(
-      'AUTH_COOKIE_SECURE must be set to "true" in production (requires HTTPS), refusing to boot with auth cookies sent over plain HTTP',
+      'AUTH_COOKIE_SECURE must be true in production — auth cookies must only be sent over HTTPS. Set ALLOW_INSECURE_HTTP=true if running in a private HTTP UAT/testing environment.',
+    );
+  }
+
+  if (
+    result.data.NODE_ENV === 'production' &&
+    !result.data.SAP_CREDENTIAL_KEY
+  ) {
+    throw new Error(
+      'SAP_CREDENTIAL_KEY bắt buộc phải được cấu hình trên môi trường production (chuỗi 64 hex hoặc base64 32-byte)',
     );
   }
 

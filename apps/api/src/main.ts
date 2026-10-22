@@ -6,6 +6,7 @@
 // process.env directly, so main.ts loads dotenv explicitly, the same way
 // prisma.config.ts already does for CLI commands.
 import 'dotenv/config';
+import './config/register-root-sap-env';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, type LoggerService } from '@nestjs/common';

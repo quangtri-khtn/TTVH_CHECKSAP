@@ -24,7 +24,7 @@ describe('AuthSessionsService (integration, real Postgres)', () => {
         email: `auth-sessions-test-${randomUUID()}@example.com`,
         password: 'irrelevant-for-this-test',
         name: 'Auth Sessions Test User',
-        role: Role.TRAINEE,
+        role: Role.EMPLOYEE,
       },
     });
     userId = user.id;
@@ -113,7 +113,7 @@ describe('AuthSessionsService (integration, real Postgres)', () => {
         email: `auth-sessions-test-other-${randomUUID()}@example.com`,
         password: 'irrelevant',
         name: 'Other User',
-        role: Role.TRAINEE,
+        role: Role.EMPLOYEE,
       },
     });
     const otherSessionId = randomUUID();

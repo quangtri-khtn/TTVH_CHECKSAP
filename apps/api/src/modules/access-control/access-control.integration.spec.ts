@@ -8,9 +8,11 @@ import { AccessControlModule } from './access-control.module';
 import { Public } from './decorators/public.decorator';
 import { RequirePermissions } from './decorators/require-permissions.decorator';
 import { ACCESS_COOKIE_NAME } from './constants/auth-cookie.constants';
+import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { validateEnv } from '../../config/env.schema';
+import { Role } from '../../generated/prisma/enums';
 
 @Controller('test')
 class TestController {
@@ -50,7 +52,7 @@ describe('Access control (integration)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }), AccessControlModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }), PrismaModule, AccessControlModule],
       controllers: [TestController],
     })
       .overrideProvider(PrismaService)
@@ -97,7 +99,7 @@ describe('Access control (integration)', () => {
   });
 
   it('accepts valid JWT for a found user, request.user reflects the real role (not hardcoded ADMIN)', async () => {
-    findById.mockResolvedValue({ id: 'user-1', email: 'trainee@example.com', name: 'Trainee', role: 'TRAINEE' });
+    findById.mockResolvedValue({ id: 'user-1', email: 'employee@example.com', name: 'Employee', role: Role.EMPLOYEE, isActive: true });
     const token = await jwtService.signAsync({ sub: 'user-1' });
     await request(app.getHttpServer())
       .get('/test/protected')
@@ -106,7 +108,7 @@ describe('Access control (integration)', () => {
   });
 
   it('rejects an EXPIRED access token (401)', async () => {
-    findById.mockResolvedValue({ id: 'user-1', email: 'trainee@example.com', name: 'Trainee', role: 'TRAINEE' });
+    findById.mockResolvedValue({ id: 'user-1', email: 'employee@example.com', name: 'Employee', role: Role.EMPLOYEE, isActive: true });
     const expiredToken = await jwtService.signAsync({ sub: 'user-1' }, { expiresIn: '-1s' });
     await request(app.getHttpServer())
       .get('/test/protected')
@@ -118,8 +120,8 @@ describe('Access control (integration)', () => {
     await request(app.getHttpServer()).get('/test/public').expect(200);
   });
 
-  it('rejects TRAINEE (no granted permissions) on a @RequirePermissions route (403)', async () => {
-    findById.mockResolvedValue({ id: 'user-1', email: 'trainee@example.com', name: 'Trainee', role: 'TRAINEE' });
+  it('rejects EMPLOYEE (no granted permissions for some:action) on a @RequirePermissions route (403)', async () => {
+    findById.mockResolvedValue({ id: 'user-1', email: 'employee@example.com', name: 'Employee', role: Role.EMPLOYEE, isActive: true });
     const token = await jwtService.signAsync({ sub: 'user-1' });
     await request(app.getHttpServer())
       .get('/test/permission')
@@ -128,7 +130,7 @@ describe('Access control (integration)', () => {
   });
 
   it('accepts ADMIN (wildcard permission) on a @RequirePermissions route (200) — proves request.user is set before PermissionsGuard runs, verifying cross-module guard order', async () => {
-    findById.mockResolvedValue({ id: 'admin-1', email: 'admin@example.com', name: 'Admin', role: 'ADMIN' });
+    findById.mockResolvedValue({ id: 'admin-1', email: 'admin@example.com', name: 'Admin', role: Role.ADMIN, isActive: true });
     const token = await jwtService.signAsync({ sub: 'admin-1' });
     await request(app.getHttpServer())
       .get('/test/permission')

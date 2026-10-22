@@ -4,8 +4,8 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-jwt';
 import type { Request } from 'express';
 import { UsersService } from '../../users/users.service';
-import { ACCESS_COOKIE_NAME } from '../constants/auth-cookie.constants';
 import type { AuthUser } from '../decorators/current-user.decorator';
+import { ACCESS_COOKIE_NAME } from '../constants/auth-cookie.constants';
 
 function extractAccessTokenFromCookie(req: Request): string | null {
   return req?.cookies?.[ACCESS_COOKIE_NAME] ?? null;
@@ -29,7 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: { sub?: string }): Promise<AuthUser> {
     const user = payload?.sub ? await this.usersService.findById(payload.sub) : null;
-    if (!user) {
+    if (!user || !user.isActive) {
       throw new UnauthorizedException();
     }
     return user;

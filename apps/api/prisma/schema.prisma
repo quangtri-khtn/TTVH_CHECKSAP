@@ -9,23 +9,25 @@ generator client {
 
 enum Role {
   ADMIN
-  TRAINER
-  TRAINEE
+  EMPLOYEE
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      Role     @default(TRAINEE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  authSessions AuthSession[]
+  id                String        @id @default(cuid())
+  email             String        @unique
+  password          String
+  name              String
+  role              Role          @default(EMPLOYEE)
+  isActive          Boolean       @default(true)
+  customPermissions String[]      @default([])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  authSessions      AuthSession[]
 }
 
 model AuthSession {
+  // Callers always pass id explicitly (signed into the JWT sid claim in the
+  // same operation) — the cuid() default is a safety net, not the real path.
   id               String    @id @default(cuid())
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -39,4 +41,21 @@ model AuthSession {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// Tài khoản SQL Server dùng để đọc SAP HANA qua linked server hana_mc.
+/// Địa chỉ máy chủ lấy từ biến môi trường SAP_SQL_HOST/SAP_SQL_PORT, không lưu ở đây.
+/// Tối đa 1 dòng isActive = true, bảo đảm bằng partial unique index viết tay trong migration.
+model SapConnection {
+  id                String    @id @default(cuid())
+  username          String    @unique
+  /// AES-256-GCM, dạng "iv.tag.ct" (base64), khóa SAP_CREDENTIAL_KEY
+  passwordEncrypted String
+  isActive          Boolean   @default(false)
+  lastTestAt        DateTime?
+  lastTestOk        Boolean?
+  updatedById       String?
+  updatedByName     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }

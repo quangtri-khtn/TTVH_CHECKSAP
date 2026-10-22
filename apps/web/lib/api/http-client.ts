@@ -1,3 +1,5 @@
+import { refreshOnce } from './authed-fetch';
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -8,19 +10,12 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-const REFRESH_PATH = '/auth/refresh';
-
-async function performFetch(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${BASE_URL}${url}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
-}
+const getBaseUrl = (): string => {
+  if (typeof window === 'undefined') {
+    return process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
+  }
+  return '/api';
+};
 
 // Orval's react-query client (fetch mode) calls the mutator as
 // customFetch<TResponse>(url, init), where TResponse is already the full
@@ -33,27 +28,40 @@ export const customFetch = async <
   url: string,
   init?: RequestInit,
 ): Promise<TResponse> => {
-  let response = await performFetch(url, init);
+  // FormData bodies (multipart file upload) must NOT get a manual
+  // Content-Type — the browser sets it itself with the required boundary
+  // param. Forcing application/json here makes the server see an empty
+  // body with no error surfaced anywhere in the request/response cycle.
+  const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
 
-  // Access token expired mid-session (15m TTL) — try one silent refresh and
-  // replay the original request. Exclude /auth/refresh itself from this
-  // retry path, or a failing refresh call would recursively trigger
-  // another refresh forever.
-  if (response.status === 401 && !url.endsWith(REFRESH_PATH)) {
-    let refreshResponse = await performFetch(REFRESH_PATH, { method: 'POST' });
-    // 409: another concurrent request refreshed this exact session first
-    // (benign race — backend's compare-and-swap rotate). Not a real
-    // logout, just means someone else already won the refresh — one more
-    // attempt now succeeds against the already-rotated cookie.
-    if (refreshResponse.status === 409) {
-      refreshResponse = await performFetch(REFRESH_PATH, { method: 'POST' });
-    }
-    if (refreshResponse.ok) {
-      response = await performFetch(url, init);
+  const performFetch = () =>
+    fetch(`${getBaseUrl()}${url}`, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...init?.headers,
+      },
+    });
+
+  let response = await performFetch();
+  // Authentication endpoints must never trigger a refresh-retry — a 401
+  // on /auth/login or /auth/microsoft-sso is simply bad credentials, and
+  // /auth/refresh would recurse forever if its own token is invalid.
+  const isAuthEndpoint = ['/auth/refresh', '/auth/login', '/auth/microsoft-sso'].some((path) =>
+    url.endsWith(path),
+  );
+  if (response.status === 401 && !isAuthEndpoint) {
+    const ok = await refreshOnce();
+    if (ok) {
+      response = await performFetch();
     }
   }
 
   if (!response.ok) {
+    if (response.status === 403 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth:forbidden'));
+    }
     const body = await response.json().catch(() => ({}));
     throw new ApiError(response.status, body.message ?? `HTTP ${response.status}`);
   }

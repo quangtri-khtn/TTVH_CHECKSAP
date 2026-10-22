@@ -10,6 +10,5 @@ export type UserResponseDtoRole = typeof UserResponseDtoRole[keyof typeof UserRe
 
 export const UserResponseDtoRole = {
   ADMIN: 'ADMIN',
-  TRAINER: 'TRAINER',
-  TRAINEE: 'TRAINEE',
+  EMPLOYEE: 'EMPLOYEE',
 } as const;

@@ -11,4 +11,8 @@ export interface UserResponseDto {
   email: string;
   name: string;
   role: UserResponseDtoRole;
+  isActive: boolean;
+  createdAt: string;
+  customPermissions: string[];
+  permissions: string[];
 }

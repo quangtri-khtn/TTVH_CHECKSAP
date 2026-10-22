@@ -8,6 +8,7 @@ import { AccessControlModule } from './modules/access-control/access-control.mod
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { SapModule } from './modules/sap/sap.module';
 import { validateEnv, type AppEnv } from './config/env.schema';
 import { OriginCheckGuard } from './common/guards/origin-check.guard';
 
@@ -83,6 +84,7 @@ import { OriginCheckGuard } from './common/guards/origin-check.guard';
     UsersModule,
     AuthModule,
     HealthModule,
+    SapModule,
   ],
   controllers: [],
   providers: [

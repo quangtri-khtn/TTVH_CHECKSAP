@@ -2,6 +2,7 @@
 
 // Thanh công cụ điều khiển tham số truy vấn SAP Luồng Trả (Từ ngày Date Picker, Brand Select 5001..5007),
 // xuất Excel chi tiết 3 sheets và bật/tắt bảng trạng thái chuỗi chứng từ.
+import { useMemo } from 'react';
 import { ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,7 @@ import {
   dateInputToSapDate,
   sapDateToDateInput,
 } from '@/lib/sap-monitor/return-monitor-domain';
+import { useSapBrandsGet } from '@/lib/api/generated/sap-stores/sap-stores';
 
 export interface ReturnMonitorToolbarProps {
   dateFrom: string;
@@ -42,9 +44,18 @@ export function ReturnMonitorToolbar({
   isLoading,
   isDetailExporting,
 }: ReturnMonitorToolbarProps) {
-  const selectedBrand =
-    RETURN_BRAND_OPTIONS.find((b) => b.value === brand) ?? RETURN_BRAND_OPTIONS[0];
+  const brandsQuery = useSapBrandsGet();
+  const brandOptions = useMemo(() => {
+    const list = brandsQuery.data?.data.data;
+    if (!list?.length) return RETURN_BRAND_OPTIONS;
+    return list.map((b) => ({
+      value: b.code,
+      label: `${b.code} — ${b.name}`,
+    }));
+  }, [brandsQuery.data]);
 
+  const selectedBrand =
+    brandOptions.find((b) => b.value === brand) ?? brandOptions[0];
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex items-center gap-2">
@@ -72,7 +83,7 @@ export function ReturnMonitorToolbar({
             <SelectValue>{selectedBrand.label}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {RETURN_BRAND_OPTIONS.map((option) => (
+            {brandOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

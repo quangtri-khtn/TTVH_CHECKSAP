@@ -1,0 +1,96 @@
+version: 1
+meta:
+  title: "Kế Hoạch: Phân Hệ Quản Lý SapBrand & SapStore Active Stores"
+  description: "Lộ trình thực thi 3 phase xây dựng cơ chế quản lý danh mục Brand & Store, đồng bộ từ SAP HANA OWHS và lọc an toàn chống tràn trần 8000 ký tự OPENQUERY."
+theme:
+  preset: editorial
+blocks:
+  - type: hero
+    eyebrow: "Implementation Plan (Task 7 Architecture)"
+    title: "Kế Hoạch Triển Khai: Quản Lý SapBrand & SapStore Active Stores"
+    description: "Quản lý danh mục Brand & Store SAP trong DB Postgres, đồng bộ từ SAP HANA OWHS, cấu hình active store cho Bán hàng & Luồng trả và tích hợp lọc an toàn chống tràn trần 8000 ký tự OPENQUERY."
+
+  - type: key-value
+    title: "Thông Tin Dự Án & Kế Hoạch"
+    items:
+      - key: "Trạng thái"
+        value: "Sẵn sàng thực thi (Pending)"
+      - key: "Mức độ ưu tiên"
+        value: "P1 (Critical Master Data)"
+      - key: "Tổng thời gian ước tính"
+        value: "5.5 giờ (3 Phases, 16 Tasks)"
+      - key: "Nhánh Git"
+        value: "feat/sap-sql-service-connection"
+      - key: "Kiến trúc áp dụng"
+        value: "Decoupled Filter Architecture (Lọc In-Memory Set tại Node.js Service, SQL giữ nguyên)"
+
+  - type: callout
+    tone: warning
+    title: "Giải Quyết Điểm Nghẽn Kỹ Thuật (8,000-Character Overflow Constraint)"
+    text: "Nếu nối danh sách mã kho vào câu lệnh OPENQUERY qua mệnh đề IN (...), SQL Server sẽ lập tức vỡ trần 8,000 ký tự khi số kho tăng (Maycha 95 kho, Tam Hảo 130 kho). Kế hoạch này áp dụng kiến trúc tách biệt: SAP chỉ query theo Brand, Postgres lưu cấu hình Active, và Node.js Service lọc dữ liệu trong bộ nhớ với Set.has O(1)."
+
+  - type: section
+    title: "1. Bảng Phân Rã 3 Phases Thực Thi"
+    blocks:
+      - type: table
+        title: "Lộ trình thực hiện chi tiết từng phase"
+        columns: ["Phase", "Tên Giai Đoạn", "Nội Dung Trọng Tâm", "Thời Lượng", "Phụ Thuộc"]
+        rows:
+          - ["Phase 1", "Start (DB Schema, Seed & API)", "Prisma schema sap_brands & sap_stores, migration, seed 7 brands & 26 pilot stores, SapBrandService, SapStoreService, SapStoresController & unit tests", "2.0h", "None"]
+          - ["Phase 2", "Backend Filter Integration", "Tích hợp lọc activeSalesStoreCodes & activeReturnStoreCodes vào 2 Monitor Services, đồng bộ Excel Services, unit tests, pnpm codegen", "1.5h", "Phase 1"]
+          - ["Phase 3", "Frontend Admin & Navigation", "Menu Admin Quản trị Cửa hàng SAP, UI Trang /admin/sap-stores (metrics, filter, table, sync, toggle), chuyển dropdown Brand trên 2 Monitor sang nạp động", "2.0h", "Phase 2"]
+
+  - type: section
+    title: "2. Quy Trình Thực Thi Tuần Tự (Phase Breakdown)"
+    blocks:
+      - type: steps
+        title: "Các bước triển khai chi tiết"
+        items:
+          - title: "Phase 1: Tạo Schema Postgres, Seed Dữ Liệu & API Quản Trị Cửa Hàng (2.0 giờ)"
+            text: "Tạo bảng `sap_brands` và `sap_stores` trong Prisma, đăng ký quyền `sap-store:manage`, viết migration và seed 7 brands (`5001..5007`) cùng 26 kho pilot ban đầu. Xây dựng service đồng bộ kho từ `maycha_live.OWHS` qua linked server, bảo lưu nguyên vẹn cờ active đã cấu hình khi sync lại."
+          - title: "Phase 2: Tích Hợp Lọc Active Store Vào Monitor Bán & Trả (1.5 giờ)"
+            text: "Nạp tập hợp `Set<string>` các cửa hàng active trong `SapSalesMonitorService` và `SapReturnMonitorService` để lọc dữ liệu trong bộ nhớ trước khi tính Phễu, KPI và xuất Excel. Bổ sung Safe Fallback Guard khi tập hợp rỗng. Chạy `pnpm codegen` đồng bộ Orval hooks."
+          - title: "Phase 3: Giao Diện Quản Trị /admin/sap-stores & Chuyển Brand Sang Nạp Động (2.0 giờ)"
+            text: "Xây dựng trang `/admin/sap-stores` với đầy đủ thẻ thống kê KPI, ô tìm kiếm nhanh, bộ lọc Brand, toggle switch bật/tắt active Bán/Trả, nút Đồng bộ từ SAP. Thêm menu 'Cửa hàng SAP' vào sidebar và chuyển đổi dropdown Brand trên cả 2 màn hình Monitor sang nạp động từ API."
+
+  - type: section
+    title: "3. Ma Trận Rủi Ro & Kế Hoạch Giảm Thiểu (Risk & Mitigation)"
+    blocks:
+      - type: risk-matrix
+        title: "Đánh giá các rủi ro kỹ thuật và biện pháp xử lý"
+        items:
+          - area: "Tràn trần 8000 ký tự OPENQUERY"
+            impact: high
+            likelihood: low
+            note: "Giữ nguyên câu lệnh SQL SAP query theo Brand, chỉ lọc mã kho ở tầng Node.js Service bằng Set<string>."
+          - area: "Ghi đè cờ Active khi đồng bộ lại từ SAP"
+            impact: high
+            likelihood: low
+            note: "Câu lệnh Upsert trong Postgres chỉ cập nhật tên kho và trạng thái Inactive từ SAP, tuyệt đối bảo lưu isActiveSales và isActiveReturn."
+          - area: "Mất kết nối Linked Server khi bấm Đồng bộ kho"
+            impact: medium
+            likelihood: medium
+            note: "Có sẵn seed migration ban đầu cho 7 Brands và 26 kho pilot; nếu sync thất bại hệ thống vẫn hoạt động trên dữ liệu hiện tại."
+          - area: "Thương hiệu chưa được cấu hình kho Active nào"
+            impact: medium
+            likelihood: low
+            note: "Triển khai Safe Fallback Guard: nếu Set active rỗng, giữ nguyên toàn bộ dữ liệu kèm log cảnh báo, không gây trắng màn hình."
+          - area: "Lệch số giữa màn hình và file Excel xuất ra"
+            impact: high
+            likelihood: low
+            note: "Cả 2 dịch vụ xuất Excel (Bán & Trả) đều tái sử dụng chung dữ liệu đã lọc qua cache của Monitor Service."
+
+  - type: section
+    title: "4. Tiêu Chí Nghiệm Thu Toàn Diện (Global Success Criteria)"
+    blocks:
+      - type: checklist
+        title: "Checklist hoàn thành nhiệm vụ"
+        items:
+          - { text: "Bảo đảm giới hạn chuỗi SQL: 100% không nối chuỗi IN (...) vào OPENQUERY.", done: false }
+          - { text: "Tính toàn vẹn dữ liệu: Seed thành công 7 brands và 26 kho pilot vào PostgreSQL.", done: false }
+          - { text: "Cơ chế đồng bộ Idempotent: Sync từ SAP OWHS cập nhật tên và Inactive mà không làm mất cờ active đã chọn.", done: false }
+          - { text: "Lọc chính xác trên Monitor Bán: Tắt 1 kho thì Phễu, KPI, Bảng Overview và Excel của /sap/monitor-ban tự động loại trừ.", done: false }
+          - { text: "Lọc chính xác trên Monitor Trả: Bật thêm 1 kho thì /sap/monitor-tra tự động nhận diện chứng từ của kho mới.", done: false }
+          - { text: "Dropdown Brand động: Cả 2 trang Monitor nạp options thương hiệu trực tiếp từ GET /sap/brands.", done: false }
+          - { text: "Trang Quản trị /admin/sap-stores: Quản trị viên tìm kiếm, lọc theo brand và toggle active mượt mà.", done: false }
+          - { text: "Kiểm thử & Tiêu chuẩn mã nguồn: 100% unit tests pass, type-check 0 errors, lint sạch hoàn toàn.", done: false }

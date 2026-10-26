@@ -9,6 +9,25 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { Role } from '../src/generated/prisma/enums';
 import { ARGON2_OPTIONS } from '../src/modules/auth/argon2-options.constant';
+import { RETURN_PILOT_STORES } from '../src/modules/sap/lib/sap-constants';
+
+const SAP_BRANDS_SEED = [
+  { code: '5001', name: 'Maycha', sortOrder: 1 },
+  { code: '5002', name: 'Tam Hảo', sortOrder: 2 },
+  { code: '5003', name: 'HO - DCCK', sortOrder: 3 },
+  { code: '5004', name: 'Cloud Kitchen', sortOrder: 4 },
+  { code: '5005', name: 'Gà Giòn Sốt 3 Cô Gái', sortOrder: 5 },
+  { code: '5006', name: 'Trà Hú', sortOrder: 6 },
+  { code: '5007', name: 'Thức Coffee', sortOrder: 7 },
+] as const;
+
+function resolvePilotBrandCode(storeCode: string): string {
+  if (storeCode.startsWith('MC')) return '5001';
+  if (storeCode.startsWith('BB')) return '5002';
+  if (storeCode.startsWith('GA')) return '5005';
+  if (storeCode.startsWith('TC')) return '5007';
+  return '5001';
+}
 
 const ADMIN_EMAIL = 'admin@maycha.com';
 const ADMIN_PASSWORD = 'Admin@123456';
@@ -42,6 +61,41 @@ async function seed() {
   });
 
   console.log(`Seeded admin user: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
+
+  for (const brand of SAP_BRANDS_SEED) {
+    await prisma.sapBrand.upsert({
+      where: { code: brand.code },
+      update: { name: brand.name, sortOrder: brand.sortOrder, isActive: true },
+      create: {
+        code: brand.code,
+        name: brand.name,
+        sortOrder: brand.sortOrder,
+        isActive: true,
+      },
+    });
+  }
+  console.log(`[seed] SAP brands upserted: ${SAP_BRANDS_SEED.length}`);
+
+  for (const storeCode of RETURN_PILOT_STORES) {
+    const brandCode = resolvePilotBrandCode(storeCode);
+    await prisma.sapStore.upsert({
+      where: { code: storeCode },
+      update: {
+        brandCode,
+        isActiveSales: true,
+        isActiveReturn: true,
+      },
+      create: {
+        code: storeCode,
+        name: `Cửa hàng ${storeCode}`,
+        brandCode,
+        sapInactive: false,
+        isActiveSales: true,
+        isActiveReturn: true,
+      },
+    });
+  }
+  console.log(`[seed] SAP pilot stores upserted: ${RETURN_PILOT_STORES.length}`);
   await app.close();
   process.exit(0);
 }

@@ -9,6 +9,7 @@ import {
   LogOut,
   RotateCcw,
   ShieldCheck,
+  Store,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -57,6 +58,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/sap-connections',
     icon: Database,
     permission: PERMISSIONS.SAP_CONNECTION_MANAGE,
+  },
+  {
+    label: 'Cửa Hàng SAP',
+    href: '/admin/sap-stores',
+    icon: Store,
+    permission: PERMISSIONS.SAP_STORE_MANAGE,
   },
   {
     label: 'Quản Trị User',

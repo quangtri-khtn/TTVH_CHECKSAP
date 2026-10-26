@@ -5,6 +5,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GetSalesMonitorQueryDto } from '../dto/sales-monitor-query.dto';
 import { SalesMonitorDataDto } from '../dto/sales-monitor-response.dto';
 import {
+  CHAIN_COLUMNS,
   NHOM_CU,
   NHOM_MOI,
   assemblePoChain,
@@ -15,6 +16,7 @@ import {
   buildStatusSummary,
   countDocStatusByCohort,
   oldCohortPoNumbers,
+  recordsToTable,
   tagCohort,
   todayInVietnam,
 } from '../lib/sales-monitor';
@@ -28,6 +30,7 @@ import {
   buildSalesListQueries,
 } from '../queries/sales-monitor-queries';
 import { SapQueryGatewayService } from './sap-query-gateway.service';
+import { SapStoreService } from './sap-store.service';
 
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 20;
@@ -56,6 +59,7 @@ interface CacheEntry {
   data: SalesMonitorDataDto;
   expiresAt: number;
   poolEpoch: number;
+  configEpoch: number;
 }
 
 @Injectable()
@@ -64,7 +68,10 @@ export class SapSalesMonitorService {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<SalesMonitorDataDto>>();
 
-  constructor(private readonly gateway: SapQueryGatewayService) {}
+  constructor(
+    private readonly gateway: SapQueryGatewayService,
+    private readonly storeService: SapStoreService,
+  ) {}
 
   /** Xóa toàn bộ bộ đệm TTL trong bộ nhớ (phục vụ kiểm thử hoặc làm sạch cưỡng bức). */
   clearCache(): void {
@@ -84,15 +91,20 @@ export class SapSalesMonitorService {
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
+    const currentConfigEpoch = this.storeService.getConfigEpoch();
     const cacheKey = `${dateFrom}:${brand}`;
-    const inFlightKey = `${currentEpoch}:${cacheKey}`;
+    const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
     if (refresh) {
       this.cache.delete(cacheKey);
     } else {
       const cached = this.cache.get(cacheKey);
       if (cached) {
-        if (Date.now() < cached.expiresAt && cached.poolEpoch === currentEpoch) {
+        if (
+          Date.now() < cached.expiresAt &&
+          cached.poolEpoch === currentEpoch &&
+          cached.configEpoch === currentConfigEpoch
+        ) {
           this.logger.log(`sales monitor hit cache key=${cacheKey}`);
           return {
             ...cached.data,
@@ -118,12 +130,16 @@ export class SapSalesMonitorService {
 
     try {
       const data = await execPromise;
-      if (this.gateway.getPoolEpoch() === currentEpoch) {
+      if (
+        this.gateway.getPoolEpoch() === currentEpoch &&
+        this.storeService.getConfigEpoch() === currentConfigEpoch
+      ) {
         this.pruneCache();
         this.cache.set(cacheKey, {
           data,
           expiresAt: Date.now() + CACHE_TTL_MS,
           poolEpoch: currentEpoch,
+          configEpoch: currentConfigEpoch,
         });
       }
       return data;
@@ -137,8 +153,13 @@ export class SapSalesMonitorService {
   private pruneCache(): void {
     const now = Date.now();
     const currentEpoch = this.gateway.getPoolEpoch();
+    const currentConfigEpoch = this.storeService.getConfigEpoch();
     for (const [key, entry] of this.cache.entries()) {
-      if (now >= entry.expiresAt || entry.poolEpoch !== currentEpoch) {
+      if (
+        now >= entry.expiresAt ||
+        entry.poolEpoch !== currentEpoch ||
+        entry.configEpoch !== currentConfigEpoch
+      ) {
         this.cache.delete(key);
       }
     }
@@ -158,7 +179,13 @@ export class SapSalesMonitorService {
     const startedAt = Date.now();
     let queryCount = 0;
     const today = todayInVietnam();
-
+    const activeStoreCodes = await this.storeService.getActiveStoreCodes(brand, 'sales');
+    const shouldFilter = activeStoreCodes.size > 0;
+    if (!shouldFilter) {
+      this.logger.warn(
+        `[SapSalesMonitorService] Brand ${brand} has no active sales stores configured. Falling back to all stores.`,
+      );
+    }
     // Bước 1: Chạy tuần tự 8 câu truy vấn danh sách
     const listQueries = buildSalesListQueries(dateFrom, brand);
     const rawListResults = {} as Record<SalesListQueryKey, SapQueryResult>;
@@ -207,17 +234,34 @@ export class SapSalesMonitorService {
       }
     }
 
-    // Bước 4: Gọi các hàm Pure Domain Logic từ Phase 1
+    // Bước 4: Lọc theo cửa hàng active (in-memory Set<string>) và gọi Pure Domain Logic
+    if (shouldFilter) {
+      for (const key of SALES_LIST_ORDER) {
+        const storeIdx = rawListResults[key].columns.indexOf('Store');
+        if (storeIdx >= 0) {
+          rawListResults[key] = {
+            columns: rawListResults[key].columns,
+            rows: rawListResults[key].rows.filter((r) =>
+              activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
+            ),
+          };
+        }
+      }
+    }
+
     const listResults = tagCohort(rawListResults, dateFrom);
-    const { table: chainTable, rows: chainRows } = assemblePoChain(
+    const { rows: rawChainRows } = assemblePoChain(
       chainResults,
       dateFrom,
       today,
     );
+    const chainRows = shouldFilter
+      ? rawChainRows.filter((r) => activeStoreCodes.has(String(r['Store'] ?? '').trim()))
+      : rawChainRows;
+    const chainTable = recordsToTable(CHAIN_COLUMNS, chainRows);
     const { chainAr, chainGrpo } = buildChainArAndGrpo(chainResults, chainRows);
     const overviewTable = buildMonitorOverview(listResults);
     const docStatus = buildDocStatus(chainRows, chainAr, chainGrpo, today);
-
     const moiRows = chainRows.filter((r) => r['Nhom'] === NHOM_MOI);
     const moiAr = chainAr.filter((r) => r['Nhom'] === NHOM_MOI);
     const moiGrpo = chainGrpo.filter((r) => r.Nhom === NHOM_MOI);

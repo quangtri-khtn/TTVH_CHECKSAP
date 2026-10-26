@@ -17,6 +17,11 @@ export const PERMISSION_CATALOG = [
     category: 'SAP Monitor',
   },
   {
+    key: 'sap-store:manage',
+    label: 'Quản lý cửa hàng SAP',
+    category: 'SAP Monitor',
+  },
+  {
     key: 'user:read',
     label: 'Xem danh sách người dùng',
     category: 'Người dùng',
@@ -34,6 +39,7 @@ export type PermissionKey = (typeof PERMISSION_CATALOG)[number]['key'];
 export const PERMISSIONS = {
   SAP_MONITOR_READ: 'sap-monitor:read',
   SAP_CONNECTION_MANAGE: 'sap-connection:manage',
+  SAP_STORE_MANAGE: 'sap-store:manage',
   USER_READ: 'user:read',
   USER_MANAGE: 'user:manage',
 } as const;
@@ -41,6 +47,7 @@ export const PERMISSIONS = {
 const PERMISSION_KEYS_MAP: Record<string, true> = {
   'sap-monitor:read': true,
   'sap-connection:manage': true,
+  'sap-store:manage': true,
   'user:read': true,
   'user:manage': true,
 };

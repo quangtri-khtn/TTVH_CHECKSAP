@@ -6,7 +6,7 @@ import {
 
 describe('PermissionCatalog', () => {
   it('contains expected permission entries and structure', () => {
-    expect(PERMISSION_CATALOG.length).toBe(4);
+    expect(PERMISSION_CATALOG.length).toBe(5);
     for (const item of PERMISSION_CATALOG) {
       expect(item.key).toBeTruthy();
       expect(item.label).toBeTruthy();
@@ -25,6 +25,7 @@ describe('PermissionCatalog', () => {
     expect(PERMISSIONS.USER_MANAGE).toBe('user:manage');
     expect(PERMISSIONS.SAP_MONITOR_READ).toBe('sap-monitor:read');
     expect(PERMISSIONS.SAP_CONNECTION_MANAGE).toBe('sap-connection:manage');
+    expect(PERMISSIONS.SAP_STORE_MANAGE).toBe('sap-store:manage');
   });
 
   it('isPermissionKey correctly validates keys', () => {
@@ -32,6 +33,7 @@ describe('PermissionCatalog', () => {
     expect(isPermissionKey('user:manage')).toBe(true);
     expect(isPermissionKey('sap-monitor:read')).toBe(true);
     expect(isPermissionKey('sap-connection:manage')).toBe(true);
+    expect(isPermissionKey('sap-store:manage')).toBe(true);
     expect(isPermissionKey('*')).toBe(false);
     expect(isPermissionKey('unknown:key')).toBe(false);
     expect(isPermissionKey('')).toBe(false);

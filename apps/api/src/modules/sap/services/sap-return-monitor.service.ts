@@ -6,6 +6,7 @@ import { GetReturnMonitorQueryDto } from '../dto/return-monitor-query.dto';
 import { ReturnMonitorDataDto } from '../dto/return-monitor-response.dto';
 import {
   RET_AR_NOINV_COLS,
+  RET_CHAIN_COLUMNS,
   assembleReturnChain,
   buildReturnArNoInv,
   buildReturnFunnel,
@@ -26,6 +27,7 @@ import {
   buildReturnQueries,
 } from '../queries/return-monitor-queries';
 import { SapQueryGatewayService } from './sap-query-gateway.service';
+import { SapStoreService } from './sap-store.service';
 
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 20;
@@ -54,6 +56,7 @@ interface CacheEntry {
   data: ReturnMonitorDataDto;
   expiresAt: number;
   poolEpoch: number;
+  configEpoch: number;
 }
 
 @Injectable()
@@ -62,7 +65,10 @@ export class SapReturnMonitorService {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<ReturnMonitorDataDto>>();
 
-  constructor(private readonly gateway: SapQueryGatewayService) {}
+  constructor(
+    private readonly gateway: SapQueryGatewayService,
+    private readonly storeService: SapStoreService,
+  ) {}
 
   /** Xóa toàn bộ bộ đệm TTL trong bộ nhớ (phục vụ kiểm thử hoặc làm sạch cưỡng bức). */
   clearCache(): void {
@@ -82,15 +88,20 @@ export class SapReturnMonitorService {
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
+    const currentConfigEpoch = this.storeService.getConfigEpoch();
     const cacheKey = `${dateFrom}:${brand}`;
-    const inFlightKey = `${currentEpoch}:${cacheKey}`;
+    const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
     if (refresh) {
       this.cache.delete(cacheKey);
     } else {
       const cached = this.cache.get(cacheKey);
       if (cached) {
-        if (Date.now() < cached.expiresAt && cached.poolEpoch === currentEpoch) {
+        if (
+          Date.now() < cached.expiresAt &&
+          cached.poolEpoch === currentEpoch &&
+          cached.configEpoch === currentConfigEpoch
+        ) {
           this.logger.log(`return monitor hit cache key=${cacheKey}`);
           return {
             ...cached.data,
@@ -116,12 +127,16 @@ export class SapReturnMonitorService {
 
     try {
       const data = await execPromise;
-      if (this.gateway.getPoolEpoch() === currentEpoch) {
+      if (
+        this.gateway.getPoolEpoch() === currentEpoch &&
+        this.storeService.getConfigEpoch() === currentConfigEpoch
+      ) {
         this.pruneCache();
         this.cache.set(cacheKey, {
           data,
           expiresAt: Date.now() + CACHE_TTL_MS,
           poolEpoch: currentEpoch,
+          configEpoch: currentConfigEpoch,
         });
       }
       return data;
@@ -135,8 +150,13 @@ export class SapReturnMonitorService {
   private pruneCache(): void {
     const now = Date.now();
     const currentEpoch = this.gateway.getPoolEpoch();
+    const currentConfigEpoch = this.storeService.getConfigEpoch();
     for (const [key, entry] of this.cache.entries()) {
-      if (now >= entry.expiresAt || entry.poolEpoch !== currentEpoch) {
+      if (
+        now >= entry.expiresAt ||
+        entry.poolEpoch !== currentEpoch ||
+        entry.configEpoch !== currentConfigEpoch
+      ) {
         this.cache.delete(key);
       }
     }
@@ -156,6 +176,13 @@ export class SapReturnMonitorService {
     const startedAt = Date.now();
     let queryCount = 0;
     const today = todayInVietnam();
+    const activeStoreCodes = await this.storeService.getActiveStoreCodes(brand, 'return');
+    const shouldFilter = activeStoreCodes.size > 0;
+    if (!shouldFilter) {
+      this.logger.warn(
+        `[SapReturnMonitorService] Brand ${brand} has no active return stores configured. Falling back to all stores.`,
+      );
+    }
 
     // Bước 1: Chạy tuần tự 7 câu truy vấn chuẩn (po, so, do, ar, grpo, ap, whs)
     const listQueries = buildReturnQueries(dateFrom, brand);
@@ -214,7 +241,19 @@ export class SapReturnMonitorService {
       }
     }
 
-    // Bước 5: Gọi các hàm Pure Domain Logic từ Phase 1
+    // Bước 5: Lọc theo cửa hàng active (in-memory Set<string>) và gọi Pure Domain Logic
+    if (shouldFilter) {
+      const storeIdx = results.po.columns.indexOf('Store');
+      if (storeIdx >= 0) {
+        results.po = {
+          columns: results.po.columns,
+          rows: results.po.rows.filter((r) =>
+            activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
+          ),
+        };
+      }
+    }
+
     const {
       table: chainTable,
       rows: chainRows,
@@ -222,7 +261,6 @@ export class SapReturnMonitorService {
       grpoRows,
     } = assembleReturnChain(results, dateFrom, today);
     const arNoInvRows = buildReturnArNoInv(chainRows, arRows, today);
-
     const moiRows = chainRows.filter((r) => r.Nhom === NHOM_MOI);
     const moiAr = arRows.filter((r) => r.Nhom === NHOM_MOI);
     const moiGrpo = grpoRows.filter((r) => r.Nhom === NHOM_MOI);

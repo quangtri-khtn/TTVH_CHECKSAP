@@ -59,3 +59,34 @@ model SapConnection {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 }
+
+model SapBrand {
+  code      String     @id
+  name      String
+  isActive  Boolean    @default(true)
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  stores    SapStore[]
+
+  @@map("sap_brands")
+}
+
+model SapStore {
+  code           String    @id
+  name           String
+  brandCode      String?
+  brand          SapBrand? @relation(fields: [brandCode], references: [code], onDelete: SetNull)
+  sapInactive    Boolean   @default(false)
+  isActiveSales  Boolean   @default(false)
+  isActiveReturn Boolean   @default(false)
+  syncedAt       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([brandCode])
+  @@index([isActiveSales])
+  @@index([isActiveReturn])
+  @@index([sapInactive])
+  @@map("sap_stores")
+}

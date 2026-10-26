@@ -1,7 +1,7 @@
 // Hàm dựng 8 câu truy vấn SQL cho màn hình Monitor Trả hàng (7 câu chứng từ/kho + 1 câu tìm PO cũ `old_pos`).
 // Nguồn đối chiếu 1:1: `build_return_queries` (:3439-3510) trong desktop `sales_flow_checker.py`.
 import { type OpenQuerySql, wrapOpenquery } from '../lib/openquery';
-import { RETURN_PILOT_STORES_SQL, RETURN_PO_VENDOR_CODE } from '../lib/sap-constants';
+import { RETURN_PO_VENDOR_CODE } from '../lib/sap-constants';
 import { assertPoNumbers, assertSapBrand, assertSapDate } from '../lib/sap-query-params';
 
 export type ReturnCandidatesQueryKey = 'old_pos';
@@ -66,7 +66,7 @@ LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum"
 LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = ${storeExpr}
 ${joins}
 WHERE P."CardCode" = '${RETURN_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND ${dateCond}
-  AND (W."WhsCode" IS NULL OR W."WhsCode" IN (${RETURN_PILOT_STORES_SQL}) OR W."U_Brand" = '${brand}')`;
+  AND W."U_Brand" = '${brand}'`;
 
   const grpoJoin = `INNER JOIN kbmd_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN kbmd_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'`;

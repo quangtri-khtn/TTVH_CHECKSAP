@@ -24,6 +24,8 @@ apps/api/src/generated
 # Env (never bake secrets into an image layer)
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 !apps/*/.env.local.example
 

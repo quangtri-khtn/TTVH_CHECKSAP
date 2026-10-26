@@ -1,22 +1,20 @@
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: ttvh-sap-monitor-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ttvh_sap_monitor_db
-    ports:
-      - "5435:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ttvh_sap_monitor_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+name: ttvh-sap-monitor
+# ==============================================================================
+# DEPLOYMENT / COMPANY DB COMPOSE — builds `api` and `web`.
+# Connects directly to company PostgreSQL TTVH_DB (172.16.2.37:5433/ttvh_sap_monitor)
+# and SAP SQL Server Linked Server (172.16.4.10:1433) via .env.
+#
+# Usage:
+#   docker compose up -d --build
+# ==============================================================================
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
   api:
     build:
       context: .
@@ -24,30 +22,68 @@ services:
     image: ttvh-sap-monitor-api:latest
     container_name: ttvh-sap-monitor-api
     restart: unless-stopped
+    init: true
+    env_file:
+      - .env
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
+      LOG_PRETTY: "false"
       PORT: 3001
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ttvh_sap_monitor_db?schema=public
+      ALLOW_INSECURE_HTTP: "true"
     ports:
-      - "3001:3001"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "${HOST_API_PORT:-3001}:3001"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 768m
+    logging: *default-logging
+    networks:
+      - ttvh_sap_monitor_net
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:3001
     image: ttvh-sap-monitor-web:latest
     container_name: ttvh-sap-monitor-web
     restart: unless-stopped
+    init: true
+    env_file:
+      - .env
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
       PORT: 3000
+      API_INTERNAL_URL: http://api:3001
     ports:
-      - "3000:3000"
+      - "${HOST_WEB_PORT:-3000}:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 512m
+    logging: *default-logging
+    networks:
+      - ttvh_sap_monitor_net
 
-volumes:
-  postgres-data:
+networks:
+  ttvh_sap_monitor_net:
+    name: ttvh_sap_monitor_net
+    driver: bridge

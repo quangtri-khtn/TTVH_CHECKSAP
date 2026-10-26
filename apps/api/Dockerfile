@@ -39,7 +39,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY . .
 # src/generated/prisma is gitignored — must regenerate here, not copied in.
-RUN pnpm --filter api prisma:generate
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public" \
+    pnpm --filter api prisma:generate
 RUN pnpm --filter api build
 # Produce a lean production dependency tree for the runner stage.
 # --legacy: pnpm v10+ defaults to requiring inject-workspace-packages=true

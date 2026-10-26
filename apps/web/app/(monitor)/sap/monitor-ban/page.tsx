@@ -51,10 +51,15 @@ export default function SalesMonitorPage() {
   return (
     <RequirePermission permission={PERMISSIONS.SAP_MONITOR_READ}>
       <div className="flex flex-1 flex-col gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">
-            Monitor Chứng từ Treo – Go-live (Luồng Bán)
-          </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="font-heading text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              Monitor Chứng từ Treo – Go-live (Luồng Bán)
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Đối soát thời gian thực tiến độ chuyển đổi PO → SO → A/R → GRPO → AP từ SAP HANA.
+            </p>
+          </div>
         </div>
 
         <SalesMonitorToolbar

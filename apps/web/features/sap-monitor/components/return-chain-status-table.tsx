@@ -38,7 +38,7 @@ export function ReturnChainStatusTable({
   onSelectAllChain,
 }: ReturnChainStatusTableProps) {
   return (
-    <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs">
+    <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs animate-in fade-in slide-in-from-top-2 duration-200">
       <h2 className="text-xs font-semibold text-foreground">
         Trạng thái chuỗi chứng từ – nhấp một dòng để lọc danh sách PO trả hàng bên dưới
       </h2>

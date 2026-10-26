@@ -46,10 +46,15 @@ export default function ReturnMonitorPage() {
   return (
     <RequirePermission permission={PERMISSIONS.SAP_MONITOR_READ}>
       <div className="flex flex-1 flex-col gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">
-            Monitor Luồng Trả hàng – Go-live (KBMD ↔ TTVH)
-          </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="font-heading text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              Monitor Luồng Trả hàng – Go-live (KBMD ↔ TTVH)
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Giám sát chuỗi chứng từ trả hàng liên công ty và cảnh báo A/R chờ xuất hóa đơn.
+            </p>
+          </div>
         </div>
 
         <ReturnMonitorToolbar

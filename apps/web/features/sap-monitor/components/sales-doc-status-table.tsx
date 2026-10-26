@@ -35,7 +35,7 @@ export function SalesDocStatusTable({
   onSelectAllChain,
 }: SalesDocStatusTableProps) {
   return (
-    <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs">
+    <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs animate-in fade-in slide-in-from-top-2 duration-200">
       <h2 className="text-xs font-semibold text-foreground">
         Chứng từ treo theo từng bước – nhấp một dòng để xem danh sách bên dưới
       </h2>

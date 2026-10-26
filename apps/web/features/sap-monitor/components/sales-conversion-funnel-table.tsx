@@ -99,52 +99,85 @@ export function SalesConversionFunnelTable({
             ) : (
               steps.map((step, idx) => {
                 const isSelected = activeFunnelStepIndex === idx;
+                const numericRate = Number.parseFloat(step.rate);
+                const hasRate = Number.isFinite(numericRate);
+                const clampedRate = hasRate ? Math.max(0, Math.min(100, numericRate)) : 0;
+                const barColor =
+                  clampedRate >= 100
+                    ? 'bg-status-success'
+                    : clampedRate >= 50
+                      ? 'bg-status-info'
+                      : clampedRate > 0
+                        ? 'bg-status-warning'
+                        : 'bg-muted-foreground/30';
+
                 return (
                   <TableRow
                     key={`${step.step}-${idx}`}
                     data-state={isSelected ? 'selected' : undefined}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSelectFunnelStep(idx)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectFunnelStep(idx);
+                      }
+                    }}
                     className={cn(
-                      'cursor-pointer align-top transition-colors',
-                      isSelected && 'bg-primary/8 hover:bg-primary/12',
+                      'cursor-pointer align-top transition-colors hover:bg-muted/50',
+                      isSelected && 'bg-primary/6 hover:bg-primary/10',
                     )}
                   >
-                    <TableCell className="border-r px-3 py-2 align-top whitespace-pre-line leading-relaxed">
+                    <TableCell className="border-r px-3 py-2.5 align-top whitespace-pre-line leading-relaxed">
                       {step.label}
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-center">
+                    <TableCell className="border-r px-3 py-2.5 align-top text-center">
                       <Badge variant="outline" className="font-mono text-[11px]">
                         {step.unit}
                       </Badge>
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-right tabular-nums">
+                    <TableCell className="border-r px-3 py-2.5 align-top text-right font-mono tabular-nums">
                       {formatSapCell(step.vin)}
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-right tabular-nums">
+                    <TableCell className="border-r px-3 py-2.5 align-top text-right tabular-nums">
                       {step.okText || formatSapCell(step.ok)}
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-right font-medium tabular-nums">
-                      {step.rate}
+                    <TableCell className="border-r px-3 py-2.5 align-top text-right font-medium tabular-nums">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-mono font-semibold">{step.rate}</span>
+                        {hasRate && (
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all duration-500 ease-out',
+                                barColor,
+                              )}
+                              style={{ width: `${clampedRate}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-right tabular-nums">
+                    <TableCell className="border-r px-3 py-2.5 align-top text-right font-mono tabular-nums">
                       {formatSapCell(step.notOk)}
                     </TableCell>
-                    <TableCell className="border-r px-3 py-2 align-top text-right tabular-nums">
+                    <TableCell className="border-r px-3 py-2.5 align-top text-right tabular-nums">
                       {step.wait > 0 ? (
                         <Badge variant="outline" className={cn('font-mono tabular-nums', STATUS_TONE_CLASS.info)}>
                           {formatSapCell(step.wait)}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">{formatSapCell(step.wait)}</span>
+                        <span className="font-mono text-muted-foreground">{formatSapCell(step.wait)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="px-3 py-2 align-top text-right tabular-nums">
+                    <TableCell className="px-3 py-2.5 align-top text-right tabular-nums">
                       {step.act > 0 ? (
                         <Badge variant="outline" className={cn('font-mono font-semibold tabular-nums', STATUS_TONE_CLASS.danger)}>
                           {formatSapCell(step.act)}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground">{formatSapCell(step.act)}</span>
+                        <span className="font-mono text-muted-foreground">{formatSapCell(step.act)}</span>
                       )}
                     </TableCell>
                   </TableRow>

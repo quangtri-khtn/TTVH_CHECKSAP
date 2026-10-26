@@ -36,7 +36,7 @@ export function isValidSapCredentialKey(val: string): boolean {
 const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(1).default('dev-placeholder-access-secret'),
   JWT_REFRESH_SECRET: z.string().min(1).default('dev-placeholder-refresh-secret'),
-  JWT_ACCESS_TTL: z.string().min(1).default('15m'),
+  JWT_ACCESS_TTL: z.string().min(1).default('8h'),
   JWT_REFRESH_TTL: z.string().min(1).default('7d'),
   AUTH_COOKIE_SECURE: z
     .enum(['true', 'false'])

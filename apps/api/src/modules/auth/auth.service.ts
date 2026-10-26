@@ -176,7 +176,7 @@ export class AuthService {
   }
 
   private async issueTokenBundle(userId: string, sessionId: string): Promise<TokenBundle> {
-    const accessTtl = this.configService.get<string>('JWT_ACCESS_TTL') ?? '15m';
+    const accessTtl = this.configService.get<string>('JWT_ACCESS_TTL') ?? '8h';
     const refreshTtl = this.configService.get<string>('JWT_REFRESH_TTL') ?? '7d';
     const refreshSecret =
       this.configService.get<string>('JWT_REFRESH_SECRET') ?? 'dev-placeholder-refresh-secret';

@@ -88,7 +88,7 @@ export class AuthController {
       httpOnly: true,
       maxAge: tokens.refreshTokenExpiresInMs,
       path: REFRESH_COOKIE_PATH,
-      sameSite: 'strict',
+      sameSite: 'lax',
       secure,
     });
   }

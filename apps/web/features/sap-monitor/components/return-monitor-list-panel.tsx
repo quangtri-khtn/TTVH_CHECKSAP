@@ -83,14 +83,20 @@ export function ReturnMonitorListPanel({
     <section className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="flex items-center gap-2">
-          <Label className="whitespace-nowrap text-xs font-medium">Chế độ xem:</Label>
+          <Label htmlFor="return-monitor-view-select" className="whitespace-nowrap text-xs font-medium">
+            Chế độ xem:
+          </Label>
           <Select
             value={viewMode}
             onValueChange={(val) => {
               if (val) onSelectViewMode(val as ReturnViewMode);
             }}
           >
-            <SelectTrigger className="h-8 w-64 text-xs">
+            <SelectTrigger
+              id="return-monitor-view-select"
+              aria-label="Chọn chế độ xem"
+              className="h-8 w-64 text-xs"
+            >
               <SelectValue>
                 {`${selectedViewOption.label} (${selectedViewCount.toLocaleString('en-US')})`}
               </SelectValue>

@@ -37,7 +37,12 @@ export function SapDataGrid({ columns, rows, isLoading = false }: SapDataGridPro
   }
 
   return (
-    <div className="max-h-[520px] overflow-auto rounded-md border">
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label="Bảng dữ liệu chứng từ SAP"
+      className="max-h-[520px] overflow-auto rounded-md border focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden"
+    >
       <table className="w-full border-collapse text-xs">
         <TableHeader className="sticky top-0 z-20 bg-muted/95 backdrop-blur-xs">
           <TableRow className="hover:bg-muted/95">

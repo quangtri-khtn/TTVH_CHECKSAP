@@ -17,7 +17,12 @@ export function useAuthActions() {
       toast.success('Đăng nhập thành công');
       router.push('/sap/monitor-ban');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Đăng nhập thất bại');
+      const raw = err instanceof Error ? err.message : '';
+      const message =
+        raw === 'Invalid email or password'
+          ? 'Email hoặc mật khẩu không chính xác.'
+          : raw || 'Đăng nhập thất bại.';
+      toast.error(message);
     }
   };
 

@@ -55,7 +55,7 @@ async function bootstrap() {
   app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000', credentials: true });
 
   const config = new DocumentBuilder()
-    .setTitle('Training App API')
+    .setTitle('TTVH SAP Monitor API')
     .setVersion('1.0.0')
     .addBearerAuth()
     .build();

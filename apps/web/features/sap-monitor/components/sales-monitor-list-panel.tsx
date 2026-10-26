@@ -86,14 +86,20 @@ export function SalesMonitorListPanel({
     <section className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="flex items-center gap-2">
-          <Label className="whitespace-nowrap text-xs font-medium">Danh sách:</Label>
+          <Label htmlFor="sales-monitor-view-select" className="whitespace-nowrap text-xs font-medium">
+            Danh sách:
+          </Label>
           <Select
             value={selectedViewKey}
             onValueChange={(val) => {
               if (val) onSelectView(val as SalesViewKey);
             }}
           >
-            <SelectTrigger className="h-8 w-72 text-xs">
+            <SelectTrigger
+              id="sales-monitor-view-select"
+              aria-label="Chọn danh sách hiển thị"
+              className="h-8 w-72 text-xs"
+            >
               <SelectValue>
                 {`${selectedViewOption.label} (${selectedViewCount.toLocaleString('en-US')})`}
               </SelectValue>

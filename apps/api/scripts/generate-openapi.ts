@@ -8,7 +8,7 @@ import { AppModule } from '../src/app.module';
 async function generate() {
   const app = await NestFactory.create(AppModule, { logger: false });
   const config = new DocumentBuilder()
-    .setTitle('Training App API')
+    .setTitle('TTVH SAP Monitor API')
     .setVersion('1.0.0')
     .addBearerAuth()
     .build();

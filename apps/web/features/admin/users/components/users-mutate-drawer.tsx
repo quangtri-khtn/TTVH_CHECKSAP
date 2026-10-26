@@ -39,12 +39,12 @@ const ROLE_OPTIONS = [
   {
     value: CreateUserDtoRole.ADMIN,
     label: 'Quản trị viên',
-    hint: 'Toàn quyền quản lý danh mục, hệ thống, người dùng và yêu cầu hỗ trợ.',
+    hint: 'Toàn quyền giám sát chứng từ SAP, cấu hình kết nối và quản trị người dùng.',
   },
   {
     value: CreateUserDtoRole.EMPLOYEE,
     label: 'Nhân viên',
-    hint: 'Xem cổng thông tin và gửi yêu cầu hỗ trợ.',
+    hint: 'Theo dõi và xuất báo cáo trên các màn hình SAP Monitor được phân quyền.',
   },
 ] as const;
 

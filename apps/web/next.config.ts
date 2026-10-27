@@ -1,6 +1,11 @@
+import { existsSync } from 'fs';
 import type { NextConfig } from 'next';
 import path from 'path';
 
+const rootEnvPath = path.resolve(__dirname, '../../.env');
+if (existsSync(rootEnvPath) && typeof process.loadEnvFile === 'function') {
+  process.loadEnvFile(rootEnvPath);
+}
 const nextConfig: NextConfig = {
   // Required for apps/web/Dockerfile — bundles server + minimal node_modules
   // into .next/standalone instead of shipping the full node_modules tree.

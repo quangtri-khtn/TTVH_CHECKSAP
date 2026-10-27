@@ -29,27 +29,23 @@ COPY packages/typescript-config/package.json packages/typescript-config/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ---------- Stage 2: build ----------
-FROM base AS build
-# `pnpm --prod deploy` below re-resolves its own dependency tree — it does
-# NOT simply reuse the node_modules copied from `deps`, so this stage needs
-# its own build toolchain for argon2's native addon, same reasoning as deps.
-RUN apk add --no-cache python3 make g++
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY . .
-# src/generated/prisma is gitignored — must regenerate here, not copied in.
+# ---------- Stage 2: prod-deps (cached across source/schema edits) ----------
+FROM deps AS prod-deps
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm --filter api --prod deploy /deploy/api --legacy
+
+# ---------- Stage 3: build ----------
+FROM deps AS build
+COPY packages/ ./packages/
+COPY apps/api/tsconfig*.json apps/api/prisma.config.ts ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
+# src/generated/prisma is gitignored — regenerate only when schema/tsconfig changes.
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public" \
     pnpm --filter api prisma:generate
+COPY apps/api/ ./apps/api/
 RUN pnpm --filter api build
-# Produce a lean production dependency tree for the runner stage.
-# --legacy: pnpm v10+ defaults to requiring inject-workspace-packages=true
-# for `pnpm deploy`, which this workspace does not set — --legacy restores
-# the old deploy behavior (resolve from registry, not symlink workspace
-# packages), which is what this single-package deploy actually needs.
-RUN pnpm --filter api --prod deploy /deploy/api --legacy
 
-# ---------- Stage 3: runner ----------
+# ---------- Stage 4: runner ----------
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
@@ -57,11 +53,10 @@ WORKDIR /app
 # Non-root user
 RUN addgroup -S nodejs && adduser -S nestjs -G nodejs
 
-# App artefacts
-COPY --from=build --chown=nestjs:nodejs /deploy/api/dist ./dist
-COPY --from=build --chown=nestjs:nodejs /deploy/api/node_modules ./node_modules
-COPY --from=build --chown=nestjs:nodejs /deploy/api/package.json ./package.json
-
+# Copy prod node_modules BEFORE dist so code rebuilds keep node_modules layer cached
+COPY --from=prod-deps --chown=nestjs:nodejs /deploy/api/node_modules ./node_modules
+COPY --from=prod-deps --chown=nestjs:nodejs /deploy/api/package.json ./package.json
+COPY --from=build --chown=nestjs:nodejs /app/apps/api/dist ./dist
 USER nestjs
 EXPOSE 3001
 # nest build's outDir mirrors src/, so the entry point is dist/src/main.js,

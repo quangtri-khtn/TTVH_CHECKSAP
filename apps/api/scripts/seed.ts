@@ -95,6 +95,11 @@ async function seed() {
       },
     });
   }
+  const brand5001Res = await prisma.sapStore.updateMany({
+    where: { brandCode: '5001' },
+    data: { isActiveSales: true, isActiveReturn: true },
+  });
+  console.log(`[seed] SAP brand 5001 stores activated: ${brand5001Res.count}`);
   console.log(`[seed] SAP pilot stores upserted: ${RETURN_PILOT_STORES.length}`);
   await app.close();
   process.exit(0);

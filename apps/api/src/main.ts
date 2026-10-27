@@ -19,13 +19,17 @@ if (existsSync(apiEnv)) dotenv.config({ path: apiEnv, override: true });
 
 import './config/register-root-sap-env';
 import 'reflect-metadata';
+import type { Request } from 'express';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { ConfigService } from '@nestjs/config';
 import { ValidationPipe, type LoggerService } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { isRequestOriginAllowed } from './common/guards/origin-check.guard';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -33,9 +37,10 @@ async function bootstrap() {
   // Buffers Nest's internal logs (framework startup messages, module init)
   // until the pino Logger below is wired up, so nothing is lost or printed
   // through the default console logger mid-bootstrap.
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  // Trust first proxy hop (Next.js rewrites / reverse proxy) so X-Forwarded-* headers are honored
+  app.set('trust proxy', 1);
   app.useLogger(app.get<LoggerService>(Logger));
-  // Without this, PrismaService.onModuleDestroy never runs on SIGTERM —
   // the DB connection gets cut abruptly instead of closed cleanly when a
   // container orchestrator stops the process.
   app.enableShutdownHooks();
@@ -52,7 +57,15 @@ async function bootstrap() {
   );
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000', credentials: true });
+  const configService = app.get(ConfigService);
+  const webOrigin = configService.get<string>('WEB_ORIGIN') ?? 'http://localhost:3000';
+  app.enableCors((request: Request, callback) => {
+    const isAllowed = isRequestOriginAllowed(request, webOrigin);
+    callback(null, {
+      origin: isAllowed,
+      credentials: true,
+    });
+  });
 
   const config = new DocumentBuilder()
     .setTitle('TTVH SAP Monitor API')

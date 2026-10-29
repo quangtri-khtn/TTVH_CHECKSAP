@@ -229,6 +229,43 @@ export class SapStoreService {
     brandCode: string,
     type: 'sales' | 'return',
   ): Promise<Set<string>> {
+    if (brandCode.toUpperCase() === 'ALL') {
+      const allStores = await this.prisma.sapStore.findMany({
+        select: {
+          code: true,
+          brandCode: true,
+          isActiveSales: true,
+          isActiveReturn: true,
+        },
+      });
+      const byBrand = new Map<
+        string,
+        { allCodes: string[]; activeCodes: string[] }
+      >();
+      for (const s of allStores) {
+        const key = s.brandCode ?? '__NONE__';
+        let bucket = byBrand.get(key);
+        if (!bucket) {
+          bucket = { allCodes: [], activeCodes: [] };
+          byBrand.set(key, bucket);
+        }
+        bucket.allCodes.push(s.code);
+        const isActive = type === 'sales' ? s.isActiveSales : s.isActiveReturn;
+        if (isActive) {
+          bucket.activeCodes.push(s.code);
+        }
+      }
+      const result = new Set<string>();
+      for (const bucket of byBrand.values()) {
+        const chosen =
+          bucket.activeCodes.length > 0 ? bucket.activeCodes : bucket.allCodes;
+        for (const code of chosen) {
+          result.add(code);
+        }
+      }
+      return result;
+    }
+
     const stores = await this.prisma.sapStore.findMany({
       where: {
         brandCode,

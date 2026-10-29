@@ -100,6 +100,35 @@ describe('sap-query-template-engine', () => {
       }
     });
 
+    it('expands brand=ALL safely across Sales ({br}) and all 6 Return ({brand}) queries, and fails closed on unsupported {brand} patterns', () => {
+      const dateFrom = '20261007';
+      for (const key of SAP_SALES_LIST_QUERY_KEYS) {
+        const rendered = renderCatalogSql(SAP_QUERY_CATALOG_BY_KEY[key].defaultSql, {
+          dateFrom,
+          brand: 'ALL',
+        });
+        expect(rendered).toContain('W."U_Brand" IS NOT NULL');
+        expect(rendered).not.toContain("''ALL''");
+      }
+
+      for (const key of ['ret_po', ...SAP_RETURN_OLD_QUERY_KEYS] as const) {
+        const rendered = renderCatalogSql(SAP_QUERY_CATALOG_BY_KEY[key].defaultSql, {
+          dateFrom,
+          brand: 'ALL',
+        });
+        expect(rendered).toContain('W."U_Brand" IS NOT NULL');
+        expect(rendered).not.toContain('{brand}');
+        expect(rendered).not.toContain("''ALL''");
+      }
+
+      expect(() =>
+        renderCatalogSql(
+          `SELECT P."DocNum" FROM kbmd_live.OPOR P LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = 'MC01' WHERE W."U_Brand" IN ('{brand}')`,
+          { dateFrom, brand: 'ALL' },
+        ),
+      ).toThrow(BadRequestException);
+    });
+
     it('rejects invalid dateFrom, brand (SQL injection attempt), or empty/negative poNumbers', () => {
       const sql = SAP_QUERY_CATALOG_BY_KEY.t1.defaultSql;
 

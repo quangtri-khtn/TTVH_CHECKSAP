@@ -3,6 +3,7 @@
 // 2. Bung biến runtime 1 lượt có kiểm tra định dạng (`expandCatalogTemplate`, `renderCatalogSql`)
 // 3. Kiểm tra tĩnh 4 lớp bằng State-Machine Lexer (`validateQueryStatic`)
 // 4. Đối chiếu Hợp đồng Cột, khóa khử trùng `dedupKeys` và ngữ nghĩa KPI (`compareQueryColumns`)
+import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { type OpenQuerySql, wrapOpenquery } from './openquery';
 import {
@@ -155,7 +156,10 @@ export function expandCatalogTemplate(
     assertPoNumbers(poNumbers);
   }
 
-  const br = `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${brand}'`;
+  const isAllBrand = brand.toUpperCase() === 'ALL';
+  const br = isAllBrand
+    ? `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" IS NOT NULL`
+    : `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${brand}'`;
   const poFilter =
     poNumbers !== undefined
       ? `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocNum" IN (${poNumbers.join(', ')})`
@@ -165,6 +169,18 @@ export function expandCatalogTemplate(
       ? `P."DocNum" IN (${poNumbers.join(', ')})`
       : `P."DocDate" >= '${dateFrom}'`;
 
+  let preparedSql = sqlText;
+  if (isAllBrand) {
+    preparedSql = preparedSql
+      .replace(/([A-Za-z0-9_."]*?"U_Brand")\s*=\s*'\{brand\}'/gi, '$1 IS NOT NULL')
+      .replace(/'\{brand\}'\s*=\s*([A-Za-z0-9_."]*?"U_Brand")/gi, '$1 IS NOT NULL');
+    if (preparedSql.includes('{brand}')) {
+      throw new BadRequestException(
+        'Câu truy vấn chứa biến {brand} không tương thích với chế độ Tất cả thương hiệu (ALL); yêu cầu mẫu W."U_Brand" = \'{brand}\'',
+      );
+    }
+  }
+
   const replacements: Record<string, string> = {
     '{d}': dateFrom,
     '{br}': br,
@@ -173,7 +189,7 @@ export function expandCatalogTemplate(
     '{date_cond}': dateCond,
   };
 
-  return sqlText.replace(
+  return preparedSql.replace(
     /\{(d|br|po_filter|brand|date_cond)\}/g,
     (match) => replacements[match] ?? match,
   );

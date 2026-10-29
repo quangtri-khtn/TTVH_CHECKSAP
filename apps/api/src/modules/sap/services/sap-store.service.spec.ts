@@ -45,6 +45,19 @@ describe('SapStoreService', () => {
       });
       expect(returnSet.size).toBe(0);
     });
+
+    it('khi brandCode=ALL (Phương án A): lấy kho active của brand đã cấu hình và fallback lấy toàn bộ kho của brand chưa bật kho active nào', async () => {
+      const { prisma, service } = createMocks();
+      prisma.sapStore.findMany.mockResolvedValue([
+        { code: 'MC001', brandCode: '5001', isActiveSales: true, isActiveReturn: true },
+        { code: 'MC002', brandCode: '5001', isActiveSales: false, isActiveReturn: false },
+        { code: 'CK001', brandCode: '5004', isActiveSales: false, isActiveReturn: false },
+        { code: 'CK002', brandCode: '5004', isActiveSales: false, isActiveReturn: false },
+      ]);
+
+      const allSalesSet = await service.getActiveStoreCodes('ALL', 'sales');
+      expect([...allSalesSet]).toEqual(['MC001', 'CK001', 'CK002']);
+    });
   });
 
   describe('update', () => {

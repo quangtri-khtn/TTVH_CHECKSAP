@@ -235,7 +235,9 @@ export function formatReturnScopeLine(dateFrom: string, brand: string): string {
   const formattedDate = /^\d{8}$/.test(dateFrom)
     ? `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`
     : dateFrom;
-  return `Luồng trả (KBMD ↔ TTVH) từ ${formattedDate}, brand ${brand} + cửa hàng pilot. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ.`;
+  const brandLabel =
+    brand.toUpperCase() === 'ALL' ? 'tất cả thương hiệu' : `brand ${brand}`;
+  return `Luồng trả (KBMD ↔ TTVH) từ ${formattedDate}, ${brandLabel} + cửa hàng pilot. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ.`;
 }
 
 export function getReturnMonitorErrorMessage(err: unknown): string {

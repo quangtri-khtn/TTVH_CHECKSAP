@@ -107,7 +107,8 @@ export class SapReturnMonitorService {
    */
   async getReturnMonitor(query: GetReturnMonitorQueryDto): Promise<ReturnMonitorDataDto> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
-    const brand = query.brand ?? MONITOR_DEFAULT_BRAND;
+    const rawBrand = query.brand ?? MONITOR_DEFAULT_BRAND;
+    const brand = rawBrand.toUpperCase() === 'ALL' ? 'ALL' : rawBrand;
     const refresh = Boolean(query.refresh);
 
     assertSapDate(dateFrom);

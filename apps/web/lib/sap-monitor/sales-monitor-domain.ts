@@ -41,6 +41,7 @@ export const DEFAULT_SALES_DATE_FROM = getYesterdaySapDate();
 export const DEFAULT_SALES_BRAND = '5001';
 
 export const SALES_BRAND_OPTIONS = [
+  { value: 'ALL', label: 'Tất cả thương hiệu' },
   { value: '5001', label: '5001 — Maycha' },
   { value: '5002', label: '5002 — Tam Hảo' },
   { value: '5003', label: '5003 — HO - DCCK' },
@@ -244,7 +245,9 @@ export function formatSalesScopeLine(dateFrom: string, brand: string): string {
   const formattedDate = /^\d{8}$/.test(dateFrom)
     ? `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`
     : dateFrom;
-  return `Chứng từ từ ${formattedDate} – brand ${brand}. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ (xem riêng, không tính vào số treo).`;
+  const brandLabel =
+    brand.toUpperCase() === 'ALL' ? 'tất cả thương hiệu' : `brand ${brand}`;
+  return `Chứng từ từ ${formattedDate} – ${brandLabel}. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ (xem riêng, không tính vào số treo).`;
 }
 export function getSalesMonitorErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {

@@ -218,14 +218,15 @@ export function buildSampleExecutableSql(
 ): string {
   const safeDate = /^\d{8}$/.test(sampleDate.trim()) ? sampleDate.trim() : DEFAULT_SAMPLE_DATE;
   const safeBrand = /^[A-Za-z0-9_-]{1,10}$/.test(sampleBrand.trim()) ? sampleBrand.trim() : DEFAULT_SAMPLE_BRAND;
+  const isAllBrand = safeBrand.toUpperCase() === 'ALL';
+  const preparedSql = isAllBrand ? sqlText.replace(/([A-Za-z0-9_."]*?"U_Brand")\s*=\s*'\{brand\}'/gi, '$1 IS NOT NULL').replace(/'\{brand\}'\s*=\s*([A-Za-z0-9_."]*?"U_Brand")/gi, '$1 IS NOT NULL') : sqlText;
+  const br = isAllBrand ? 'JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" IS NOT NULL' : `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${safeBrand}'`;
   const replacements: Record<string, string> = {
-    '{d}': safeDate,
-    '{brand}': safeBrand,
-    '{br}': `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${safeBrand}'`,
+    '{d}': safeDate, '{brand}': safeBrand, '{br}': br,
     '{po_filter}': `P."CardCode" = '309019' AND P."CANCELED" = 'N' AND P."DocDate" >= '${safeDate}'`,
     '{date_cond}': `P."DocDate" >= '${safeDate}'`,
   };
-  return sqlText.replace(/\{(d|br|po_filter|brand|date_cond)\}/g, (match) => replacements[match] ?? match);
+  return preparedSql.replace(/\{(d|br|po_filter|brand|date_cond)\}/g, (match) => replacements[match] ?? match);
 }
 
 export function estimateOpenQueryLength(

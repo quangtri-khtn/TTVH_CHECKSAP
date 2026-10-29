@@ -133,8 +133,11 @@ describe('return-monitor-domain', () => {
     expect(formatReturnScopeLine('20261007', '5001')).toContain(
       'từ 07/10/2026, brand 5001 + cửa hàng pilot',
     );
+    expect(formatReturnScopeLine('20261007', 'ALL')).toContain(
+      'từ 07/10/2026, tất cả thương hiệu + cửa hàng pilot',
+    );
     expect(formatSapCell(1250)).toBe('1,250');
-    expect(RETURN_BRAND_OPTIONS).toHaveLength(7);
+    expect(RETURN_BRAND_OPTIONS).toHaveLength(8);
   });
 
   it('Test Case 4: Xử lý thông báo lỗi tiếng Việt thân thiện khi mã lỗi là 503, 403 hoặc chuỗi thông báo kết nối thất bại', () => {

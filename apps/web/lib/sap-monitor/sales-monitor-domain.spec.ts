@@ -244,8 +244,12 @@ describe('sales-monitor-domain', () => {
     expect(formatSalesScopeLine('20261007', '5001')).toContain(
       'Chứng từ từ 07/10/2026 – brand 5001.',
     );
+    expect(formatSalesScopeLine('20261007', 'ALL')).toContain(
+      'Chứng từ từ 07/10/2026 – tất cả thương hiệu.',
+    );
     expect(getYesterdaySapDate(new Date('2026-10-21T08:00:00.000Z'))).toBe('20261020');
     expect(SALES_BRAND_OPTIONS.map((b) => b.value)).toEqual([
+      'ALL',
       '5001',
       '5002',
       '5003',

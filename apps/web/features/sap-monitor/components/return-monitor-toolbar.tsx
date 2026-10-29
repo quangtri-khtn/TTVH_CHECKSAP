@@ -58,10 +58,13 @@ export function ReturnMonitorToolbar({
   const brandOptions = useMemo(() => {
     const list = brandsQuery.data?.data.data;
     if (!list?.length) return RETURN_BRAND_OPTIONS;
-    return list.map((b) => ({
-      value: b.code,
-      label: `${b.code} — ${b.name}`,
-    }));
+    return [
+      { value: 'ALL', label: 'Tất cả thương hiệu' },
+      ...list.map((b) => ({
+        value: b.code,
+        label: `${b.code} — ${b.name}`,
+      })),
+    ];
   }, [brandsQuery.data]);
 
   const selectedBrand =

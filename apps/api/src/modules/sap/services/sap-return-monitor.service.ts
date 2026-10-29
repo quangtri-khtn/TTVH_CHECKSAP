@@ -1,12 +1,15 @@
 // Dịch vụ điều phối truy vấn và tính toán dữ liệu cho màn hình Monitor Luồng Trả hàng.
 // Tích hợp Single-flight in-memory, TTL Cache 60 giây gắn với poolEpoch của SapQueryGatewayService,
 // chia lô tối đa 300 PO cho nhóm cũ (bỏ qua truy vấn whs) và đóng gói phản hồi 4 khóa ở root.
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { GetReturnMonitorQueryDto } from '../dto/return-monitor-query.dto';
 import { ReturnMonitorDataDto } from '../dto/return-monitor-response.dto';
 import {
   RET_AR_NOINV_COLS,
-  RET_CHAIN_COLUMNS,
   assembleReturnChain,
   buildReturnArNoInv,
   buildReturnFunnel,
@@ -22,10 +25,9 @@ import {
 import { MONITOR_DEFAULT_BRAND, MONITOR_DEFAULT_DATE } from '../lib/sap-constants';
 import { assertSapBrand, assertSapDate } from '../lib/sap-query-params';
 import type { SapQueryResult } from '../lib/sap-row-normalizer';
-import {
-  type ReturnListQueryKey,
-  buildReturnQueries,
-} from '../queries/return-monitor-queries';
+import type { ReturnListQueryKey } from '../queries/return-monitor-queries';
+import { SAP_RETURN_OLD_QUERY_KEYS } from '../queries/sap-query-catalog';
+import { SapQueryConfigService } from './sap-query-config.service';
 import { SapQueryGatewayService } from './sap-query-gateway.service';
 import { SapStoreService } from './sap-store.service';
 
@@ -59,6 +61,22 @@ interface CacheEntry {
   configEpoch: number;
 }
 
+function assertBatchColumnsMatch(
+  baseColumns: readonly string[],
+  chunkColumns: readonly string[],
+  label: string,
+  logger: Logger,
+): void {
+  if (
+    chunkColumns.length !== baseColumns.length ||
+    chunkColumns.some((col, idx) => col !== baseColumns[idx])
+  ) {
+    const message = `Lệch cấu trúc cột khi nối lô PO cũ tại ${label}: [${chunkColumns.join(', ')}] !== [${baseColumns.join(', ')}]`;
+    logger.error(message);
+    throw new InternalServerErrorException(message);
+  }
+}
+
 @Injectable()
 export class SapReturnMonitorService {
   private readonly logger = new Logger(SapReturnMonitorService.name);
@@ -68,7 +86,15 @@ export class SapReturnMonitorService {
   constructor(
     private readonly gateway: SapQueryGatewayService,
     private readonly storeService: SapStoreService,
+    private readonly queryConfigService: SapQueryConfigService,
   ) {}
+
+  private getCombinedConfigEpoch(): number {
+    return (
+      this.storeService.getConfigEpoch() +
+      this.queryConfigService.getConfigEpoch()
+    );
+  }
 
   /** Xóa toàn bộ bộ đệm TTL trong bộ nhớ (phục vụ kiểm thử hoặc làm sạch cưỡng bức). */
   clearCache(): void {
@@ -88,7 +114,7 @@ export class SapReturnMonitorService {
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
-    const currentConfigEpoch = this.storeService.getConfigEpoch();
+    const currentConfigEpoch = this.getCombinedConfigEpoch();
     const cacheKey = `${dateFrom}:${brand}`;
     const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
@@ -129,7 +155,7 @@ export class SapReturnMonitorService {
       const data = await execPromise;
       if (
         this.gateway.getPoolEpoch() === currentEpoch &&
-        this.storeService.getConfigEpoch() === currentConfigEpoch
+        this.getCombinedConfigEpoch() === currentConfigEpoch
       ) {
         this.pruneCache();
         this.cache.set(cacheKey, {
@@ -150,7 +176,7 @@ export class SapReturnMonitorService {
   private pruneCache(): void {
     const now = Date.now();
     const currentEpoch = this.gateway.getPoolEpoch();
-    const currentConfigEpoch = this.storeService.getConfigEpoch();
+    const currentConfigEpoch = this.getCombinedConfigEpoch();
     for (const [key, entry] of this.cache.entries()) {
       if (
         now >= entry.expiresAt ||
@@ -184,8 +210,14 @@ export class SapReturnMonitorService {
       );
     }
 
+    const querySnapshot = await this.queryConfigService.getSnapshot();
+
     // Bước 1: Chạy tuần tự 7 câu truy vấn chuẩn (po, so, do, ar, grpo, ap, whs)
-    const listQueries = buildReturnQueries(dateFrom, brand);
+    const listQueries = this.queryConfigService.buildReturnMainSqlMap(
+      querySnapshot,
+      dateFrom,
+      brand,
+    );
     const results = {} as Record<ReturnListQueryKey, SapQueryResult>;
     for (const key of RETURN_LIST_ORDER) {
       results[key] = await this.gateway.run(
@@ -205,21 +237,27 @@ export class SapReturnMonitorService {
         : [],
     );
 
-    // Bước 3: Truy vấn tìm ứng viên PO cũ (old_pos) và lọc những PO chưa nằm trong tập PO mới
-    const candidatesQueries = buildReturnQueries(dateFrom, brand, { candidates: true });
-    const oldPosResult = await this.gateway.run(
-      'return-candidates:old_pos',
-      candidatesQueries.old_pos,
-    );
-    queryCount++;
-
-    const oldPoColIdx = oldPosResult.columns.indexOf('PO Number');
+    // Bước 3: Chạy tuần tự 5 câu ret_old_1..5 tìm ứng viên PO cũ và lọc những PO chưa nằm trong tập PO mới
+    const oldDiscoveryQueries =
+      this.queryConfigService.buildReturnOldDiscoverySqlMap(
+        querySnapshot,
+        dateFrom,
+        brand,
+      );
     const oldPoSet = new Set<number>();
-    if (oldPoColIdx >= 0) {
-      for (const row of oldPosResult.rows) {
-        const n = Number(row[oldPoColIdx]);
-        if (Number.isSafeInteger(n) && n > 0 && !newPoSet.has(n)) {
-          oldPoSet.add(n);
+    for (const oldKey of SAP_RETURN_OLD_QUERY_KEYS) {
+      const oldPosResult = await this.gateway.run(
+        `return-candidates:${oldKey}`,
+        oldDiscoveryQueries[oldKey],
+      );
+      queryCount++;
+      const oldPoColIdx = oldPosResult.columns.indexOf('PO Number');
+      if (oldPoColIdx >= 0) {
+        for (const row of oldPosResult.rows) {
+          const n = Number(row[oldPoColIdx]);
+          if (Number.isSafeInteger(n) && n > 0 && !newPoSet.has(n)) {
+            oldPoSet.add(n);
+          }
         }
       }
     }
@@ -228,13 +266,24 @@ export class SapReturnMonitorService {
     // Bước 4: Chia lô tối đa 300 PO nhóm cũ và bỏ qua truy vấn whs (Bẫy lệch số 6)
     for (let i = 0; i < oldPos.length; i += OLD_PO_CHUNK_SIZE) {
       const chunk = oldPos.slice(i, i + OLD_PO_CHUNK_SIZE);
-      const chunkQueries = buildReturnQueries(dateFrom, brand, { poNumbers: chunk });
+      const chunkQueries = this.queryConfigService.buildReturnMainSqlMap(
+        querySnapshot,
+        dateFrom,
+        brand,
+        chunk,
+      );
       for (const key of RETURN_OLD_PO_ORDER) {
         const chunkRes = await this.gateway.run(
           `return-old:${key}:${i}`,
           chunkQueries[key],
         );
         queryCount++;
+        assertBatchColumnsMatch(
+          results[key].columns,
+          chunkRes.columns,
+          `return-old:${key}:${i}`,
+          this.logger,
+        );
         for (const row of chunkRes.rows) {
           results[key].rows.push(row);
         }
@@ -259,8 +308,14 @@ export class SapReturnMonitorService {
       rows: chainRows,
       arRows,
       grpoRows,
+      extraArCols,
     } = assembleReturnChain(results, dateFrom, today);
-    const arNoInvRows = buildReturnArNoInv(chainRows, arRows, today);
+    const arNoInvRows = buildReturnArNoInv(
+      chainRows,
+      arRows,
+      today,
+      extraArCols,
+    );
     const moiRows = chainRows.filter((r) => r.Nhom === NHOM_MOI);
     const moiAr = arRows.filter((r) => r.Nhom === NHOM_MOI);
     const moiGrpo = grpoRows.filter((r) => r.Nhom === NHOM_MOI);
@@ -286,7 +341,10 @@ export class SapReturnMonitorService {
     };
 
     const summary = buildReturnStatusSummary(chainRows, arNoInvRows);
-    const arNoInvTable = recordsToTable(RET_AR_NOINV_COLS, arNoInvRows);
+    const arNoInvTable = recordsToTable(
+      [...RET_AR_NOINV_COLS, ...extraArCols],
+      arNoInvRows,
+    );
     const durationMs = Date.now() - startedAt;
 
     return {

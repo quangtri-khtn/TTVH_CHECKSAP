@@ -66,6 +66,19 @@ export const CHAIN_COLUMNS = [
   'Trang thai chuoi chung tu',
 ] as const;
 
+export const CHAIN_PO_BASELINE_COLS = new Set<string>([
+  'Store',
+  'PO Number',
+  'PO DocEntry',
+  'PO DocDate',
+  'PO CreateDate',
+  'PO Status',
+  'So dong PO',
+  'Tong SL PO',
+]);
+
+const CHAIN_COLUMNS_SET = new Set<string>(CHAIN_COLUMNS);
+
 export interface ChainGrpoRecord {
   Nhom: string;
   'PO Number': number;
@@ -76,6 +89,7 @@ export interface ChainGrpoRecord {
 export interface AssembledPoChainResult {
   table: SapQueryResult;
   rows: SapRowRecord[];
+  columns: string[];
 }
 
 function groupByPoNumber(
@@ -100,6 +114,9 @@ export function assemblePoChain(
   dateFrom: string,
   today: string,
 ): AssembledPoChainResult {
+  const extraPoCols = chainResults.po.columns.filter(
+    (c) => !CHAIN_PO_BASELINE_COLS.has(c) && !CHAIN_COLUMNS_SET.has(c),
+  );
   const poRecords = tableToRecords(chainResults.po);
   const soBy = groupByPoNumber(tableToRecords(chainResults.so));
   const arBy = groupByPoNumber(tableToRecords(chainResults.ar));
@@ -112,9 +129,14 @@ export function assemblePoChain(
   );
 
   const rows: SapRowRecord[] = [];
+  const seen = new Set<number>();
 
   for (const po of sortedPo) {
     const n = Number(po['PO Number']);
+    if (seen.has(n)) {
+      continue;
+    }
+    seen.add(n);
     const so = soBy.get(n) ?? [];
     const ar = arBy.get(n) ?? [];
     const grpo = grpoBy.get(n) ?? [];
@@ -171,7 +193,7 @@ export function assemblePoChain(
       );
     }
 
-    rows.push({
+    const row: SapRowRecord = {
       Nhom: poCohort(po['PO DocDate'], dateFrom),
       Store: po['Store'] ?? null,
       'PO Number': po['PO Number'] ?? n,
@@ -195,10 +217,15 @@ export function assemblePoChain(
       'AP Number': joinNums(ap, 'AP Number'),
       'AP DocDate': latestValue(ap, 'AP DocDate'),
       'Trang thai chuoi chung tu': status,
-    });
+    };
+    for (const col of extraPoCols) {
+      row[col] = po[col] ?? null;
+    }
+    rows.push(row);
   }
 
-  return { table: recordsToTable(CHAIN_COLUMNS, rows), rows };
+  const columns = [...CHAIN_COLUMNS, ...extraPoCols];
+  return { table: recordsToTable(columns, rows), rows, columns };
 }
 
 /** Dựng danh sách `chainAr` và `chainGrpo` (khử trùng lặp GRPO theo thứ tự trả về từ SQL Server, `:3114-3123`). */

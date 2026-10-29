@@ -96,6 +96,29 @@ export const RET_AR_NOINV_COLS = [
   'Ghi chu',
 ] as const;
 
+export const RET_PO_BASELINE_COLS = new Set<string>([
+  'PO Number',
+  'PO DocDate',
+  'PO CreateDate',
+  'Store',
+  'Brand',
+  'MC Docnum',
+  'Kho PO min',
+  'Kho PO max',
+]);
+
+export const RET_AR_BASELINE_COLS = new Set<string>([
+  'PO Number',
+  'AR Number',
+  'AR DocDate',
+  'AR CreateDate',
+  'AR ShipDate',
+  'Invoice No',
+]);
+
+const RET_CHAIN_COLUMNS_SET = new Set<string>(RET_CHAIN_COLUMNS);
+const RET_AR_NOINV_COLS_SET = new Set<string>(RET_AR_NOINV_COLS);
+
 export interface ReturnChainRow extends SapRowRecord {
   Nhom: string;
   Store: SapCellValue;
@@ -168,6 +191,8 @@ export interface AssembledReturnChainResult {
   rows: ReturnChainRow[];
   arRows: ReturnArRow[];
   grpoRows: ReturnGrpoRow[];
+  columns: string[];
+  extraArCols: string[];
 }
 
 function groupByPoNumber(
@@ -227,6 +252,12 @@ export function assembleReturnChain(
   dateFrom = '',
   today: string = todayInVietnam(),
 ): AssembledReturnChainResult {
+  const extraPoCols = results.po.columns.filter(
+    (c) => !RET_PO_BASELINE_COLS.has(c) && !RET_CHAIN_COLUMNS_SET.has(c),
+  );
+  const extraArCols = results.ar.columns.filter(
+    (c) => !RET_AR_BASELINE_COLS.has(c) && !RET_AR_NOINV_COLS_SET.has(c),
+  );
   const poRecords = tableToRecords(results.po);
   const soBy = groupByPoNumber(tableToRecords(results.so));
   const doBy = groupByPoNumber(tableToRecords(results.do));
@@ -309,7 +340,7 @@ export function assembleReturnChain(
     const nhom = dateFrom ? poCohort(po['PO DocDate'], dateFrom) : NHOM_MOI;
     const storeCode = hasValue(po['Store']) ? String(po['Store']) : '';
 
-    rows.push({
+    const chainRow: ReturnChainRow = {
       Nhom: nhom,
       Store: po['Store'] ?? null,
       'Ten cua hang': storeNameMap.get(storeCode) ?? '',
@@ -338,8 +369,11 @@ export function assembleReturnChain(
       'AP Number': joinNums(ap, 'AP Number'),
       'AP DocDate': latestValue(ap, 'AP DocDate'),
       'Trang thai chuoi chung tu': status,
-    });
-
+    };
+    for (const col of extraPoCols) {
+      chainRow[col] = po[col] ?? null;
+    }
+    rows.push(chainRow);
     for (const r of ar) {
       arRows.push({
         ...r,
@@ -365,11 +399,14 @@ export function assembleReturnChain(
     }
   }
 
+  const columns = [...RET_CHAIN_COLUMNS, ...extraPoCols];
   return {
-    table: recordsToTable(RET_CHAIN_COLUMNS, rows),
+    table: recordsToTable(columns, rows),
     rows,
     arRows,
     grpoRows,
+    columns,
+    extraArCols,
   };
 }
 
@@ -381,6 +418,7 @@ export function buildReturnArNoInv(
   rows: readonly ReturnChainRow[],
   arRows: readonly ReturnArRow[],
   today: string = todayInVietnam(),
+  extraArCols: readonly string[] = [],
 ): ReturnArNoInvRow[] {
   const poBy = new Map<number, ReturnChainRow>();
   for (const r of rows) {
@@ -418,7 +456,7 @@ export function buildReturnArNoInv(
         'PO đã được xếp vào bước sau vì có A/R khác đã xuất HĐ – A/R này vẫn thiếu HĐ';
     }
 
-    out.push({
+    const row: ReturnArNoInvRow = {
       Nhom: a['Nhom'] ?? null,
       Store: po?.['Store'] ?? null,
       'Ten cua hang': po?.['Ten cua hang'] ?? null,
@@ -437,7 +475,11 @@ export function buildReturnArNoInv(
           : '',
       'Trang thai PO': status,
       'Ghi chu': note,
-    });
+    };
+    for (const col of extraArCols) {
+      row[col] = a[col] ?? null;
+    }
+    out.push(row);
   }
 
   return out.sort(

@@ -1,11 +1,14 @@
 // Dịch vụ điều phối truy vấn và tính toán dữ liệu cho màn hình Monitor Bán hàng (Go-live).
 // Tích hợp Single-flight in-memory, TTL Cache 60 giây gắn với poolEpoch của SapQueryGatewayService,
 // chia lô tối đa 300 PO cho nhóm cũ và đóng gói phản hồi 5 khóa ở root.
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { GetSalesMonitorQueryDto } from '../dto/sales-monitor-query.dto';
 import { SalesMonitorDataDto } from '../dto/sales-monitor-response.dto';
 import {
-  CHAIN_COLUMNS,
   NHOM_CU,
   NHOM_MOI,
   assemblePoChain,
@@ -23,12 +26,11 @@ import {
 import { MONITOR_DEFAULT_BRAND, MONITOR_DEFAULT_DATE } from '../lib/sap-constants';
 import { assertSapBrand, assertSapDate } from '../lib/sap-query-params';
 import type { SapQueryResult } from '../lib/sap-row-normalizer';
-import {
-  type SalesChainQueryKey,
-  type SalesListQueryKey,
-  buildSalesChainQueries,
-  buildSalesListQueries,
+import type {
+  SalesChainQueryKey,
+  SalesListQueryKey,
 } from '../queries/sales-monitor-queries';
+import { SapQueryConfigService } from './sap-query-config.service';
 import { SapQueryGatewayService } from './sap-query-gateway.service';
 import { SapStoreService } from './sap-store.service';
 
@@ -62,6 +64,22 @@ interface CacheEntry {
   configEpoch: number;
 }
 
+function assertBatchColumnsMatch(
+  baseColumns: readonly string[],
+  chunkColumns: readonly string[],
+  label: string,
+  logger: Logger,
+): void {
+  if (
+    chunkColumns.length !== baseColumns.length ||
+    chunkColumns.some((col, idx) => col !== baseColumns[idx])
+  ) {
+    const message = `Lệch cấu trúc cột khi nối lô PO cũ tại ${label}: [${chunkColumns.join(', ')}] !== [${baseColumns.join(', ')}]`;
+    logger.error(message);
+    throw new InternalServerErrorException(message);
+  }
+}
+
 @Injectable()
 export class SapSalesMonitorService {
   private readonly logger = new Logger(SapSalesMonitorService.name);
@@ -71,7 +89,15 @@ export class SapSalesMonitorService {
   constructor(
     private readonly gateway: SapQueryGatewayService,
     private readonly storeService: SapStoreService,
+    private readonly queryConfigService: SapQueryConfigService,
   ) {}
+
+  private getCombinedConfigEpoch(): number {
+    return (
+      this.storeService.getConfigEpoch() +
+      this.queryConfigService.getConfigEpoch()
+    );
+  }
 
   /** Xóa toàn bộ bộ đệm TTL trong bộ nhớ (phục vụ kiểm thử hoặc làm sạch cưỡng bức). */
   clearCache(): void {
@@ -91,7 +117,7 @@ export class SapSalesMonitorService {
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
-    const currentConfigEpoch = this.storeService.getConfigEpoch();
+    const currentConfigEpoch = this.getCombinedConfigEpoch();
     const cacheKey = `${dateFrom}:${brand}`;
     const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
@@ -132,7 +158,7 @@ export class SapSalesMonitorService {
       const data = await execPromise;
       if (
         this.gateway.getPoolEpoch() === currentEpoch &&
-        this.storeService.getConfigEpoch() === currentConfigEpoch
+        this.getCombinedConfigEpoch() === currentConfigEpoch
       ) {
         this.pruneCache();
         this.cache.set(cacheKey, {
@@ -153,7 +179,7 @@ export class SapSalesMonitorService {
   private pruneCache(): void {
     const now = Date.now();
     const currentEpoch = this.gateway.getPoolEpoch();
-    const currentConfigEpoch = this.storeService.getConfigEpoch();
+    const currentConfigEpoch = this.getCombinedConfigEpoch();
     for (const [key, entry] of this.cache.entries()) {
       if (
         now >= entry.expiresAt ||
@@ -186,8 +212,14 @@ export class SapSalesMonitorService {
         `[SapSalesMonitorService] Brand ${brand} has no active sales stores configured. Falling back to all stores.`,
       );
     }
+    const querySnapshot = await this.queryConfigService.getSnapshot();
+
     // Bước 1: Chạy tuần tự 8 câu truy vấn danh sách
-    const listQueries = buildSalesListQueries(dateFrom, brand);
+    const listQueries = this.queryConfigService.buildSalesListSqlMap(
+      querySnapshot,
+      dateFrom,
+      brand,
+    );
     const rawListResults = {} as Record<SalesListQueryKey, SapQueryResult>;
     for (const key of SALES_LIST_ORDER) {
       rawListResults[key] = await this.gateway.run(
@@ -198,7 +230,11 @@ export class SapSalesMonitorService {
     }
 
     // Bước 2: Chạy tuần tự 5 câu truy vấn chuỗi nhóm mới
-    const chainQueries = buildSalesChainQueries(dateFrom, brand);
+    const chainQueries = this.queryConfigService.buildSalesChainSqlMap(
+      querySnapshot,
+      dateFrom,
+      brand,
+    );
     const chainResults = {} as Record<SalesChainQueryKey, SapQueryResult>;
     for (const key of SALES_CHAIN_ORDER) {
       chainResults[key] = await this.gateway.run(
@@ -221,13 +257,24 @@ export class SapSalesMonitorService {
 
     for (let i = 0; i < oldPos.length; i += OLD_PO_CHUNK_SIZE) {
       const chunk = oldPos.slice(i, i + OLD_PO_CHUNK_SIZE);
-      const chunkQueries = buildSalesChainQueries(dateFrom, brand, chunk);
+      const chunkQueries = this.queryConfigService.buildSalesChainSqlMap(
+        querySnapshot,
+        dateFrom,
+        brand,
+        chunk,
+      );
       for (const key of SALES_CHAIN_ORDER) {
         const chunkRes = await this.gateway.run(
           `sales-chain-old:${key}:${i}`,
           chunkQueries[key],
         );
         queryCount++;
+        assertBatchColumnsMatch(
+          chainResults[key].columns,
+          chunkRes.columns,
+          `sales-chain-old:${key}:${i}`,
+          this.logger,
+        );
         for (const row of chunkRes.rows) {
           chainResults[key].rows.push(row);
         }
@@ -250,7 +297,7 @@ export class SapSalesMonitorService {
     }
 
     const listResults = tagCohort(rawListResults, dateFrom);
-    const { rows: rawChainRows } = assemblePoChain(
+    const { rows: rawChainRows, columns: chainColumns } = assemblePoChain(
       chainResults,
       dateFrom,
       today,
@@ -258,7 +305,7 @@ export class SapSalesMonitorService {
     const chainRows = shouldFilter
       ? rawChainRows.filter((r) => activeStoreCodes.has(String(r['Store'] ?? '').trim()))
       : rawChainRows;
-    const chainTable = recordsToTable(CHAIN_COLUMNS, chainRows);
+    const chainTable = recordsToTable(chainColumns, chainRows);
     const { chainAr, chainGrpo } = buildChainArAndGrpo(chainResults, chainRows);
     const overviewTable = buildMonitorOverview(listResults);
     const docStatus = buildDocStatus(chainRows, chainAr, chainGrpo, today);

@@ -541,4 +541,78 @@ describe('Return Monitor Pure Domain Logic', () => {
     const po5901 = rows.find((r) => r['PO Number'] === 5901);
     expect(po5901?.['Trang thai chuoi chung tu']).toBe(RST_NO_AR);
   });
+
+  it('Test Case 7: preserves 28/15 baseline columns without leaking Kho PO min/max and passes through extra PO/AR columns', () => {
+    const baselineRes = assembleReturnChain(createBaseQueryResults(), dateFrom, today);
+    expect(baselineRes.columns).toHaveLength(28);
+    expect(baselineRes.columns).not.toContain('Kho PO min');
+    expect(baselineRes.columns).not.toContain('Kho PO max');
+    expect(baselineRes.extraArCols).toEqual([]);
+
+    const withExtras = createBaseQueryResults({
+      po: {
+        columns: [
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Store',
+          'Brand',
+          'MC Docnum',
+          'Kho PO min',
+          'Kho PO max',
+          'Ghi chú UDF',
+        ],
+        rows: [
+          [7001, '2026-10-12', '2026-10-12', 'MC001', '5001', 'MC-7001', 'DC01', 'DC01', 'Hàng vỡ vận chuyển'],
+        ],
+      },
+      so: {
+        columns: [
+          'PO Number',
+          'SO Number',
+          'SO DocDate',
+          'SO CreateDate',
+          'SO ShipDate',
+          'Kho SO min',
+          'Kho SO max',
+        ],
+        rows: [
+          [7001, 8001, '2026-10-12', '2026-10-12', '2026-10-14', 'MC001', 'MC001'],
+        ],
+      },
+      ar: {
+        columns: [
+          'PO Number',
+          'AR Number',
+          'AR DocDate',
+          'AR CreateDate',
+          'AR ShipDate',
+          'Invoice No',
+          'Kênh xuất HĐ',
+        ],
+        rows: [
+          [7001, 9001, '2026-10-13', '2026-10-13', '2026-10-14', null, 'E-Invoice VNPT'],
+        ],
+      },
+    });
+
+    const assembled = assembleReturnChain(withExtras, dateFrom, today);
+    expect(assembled.table.columns).toEqual([...RET_CHAIN_COLUMNS, 'Ghi chú UDF']);
+    expect(assembled.table.rows[0]?.[28]).toBe('Hàng vỡ vận chuyển');
+    expect(assembled.rows[0]?.['Ghi chú UDF']).toBe('Hàng vỡ vận chuyển');
+    expect(assembled.extraArCols).toEqual(['Kênh xuất HĐ']);
+
+    const arNoInvRows = buildReturnArNoInv(
+      assembled.rows,
+      assembled.arRows,
+      today,
+      assembled.extraArCols,
+    );
+    const arNoInvTable = recordsToTable(
+      [...RET_AR_NOINV_COLS, ...assembled.extraArCols],
+      arNoInvRows,
+    );
+    expect(arNoInvTable.columns).toEqual([...RET_AR_NOINV_COLS, 'Kênh xuất HĐ']);
+    expect(arNoInvTable.rows[0]?.[15]).toBe('E-Invoice VNPT');
+  });
 });

@@ -1,5 +1,6 @@
 import {
   Activity,
+  FileCode2,
   Database,
   RotateCcw,
   Store,
@@ -27,6 +28,7 @@ export interface NavGroup {
 export const ADMIN_AREA_PERMISSIONS: readonly string[] = [
   PERMISSIONS.SAP_CONNECTION_MANAGE,
   PERMISSIONS.SAP_STORE_MANAGE,
+  PERMISSIONS.SAP_QUERY_MANAGE,
   PERMISSIONS.USER_READ,
   PERMISSIONS.USER_MANAGE,
 ];
@@ -65,6 +67,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/sap-stores',
         icon: Store,
         requiredPermissions: [PERMISSIONS.SAP_STORE_MANAGE],
+      },
+      {
+        title: 'Câu truy vấn SAP',
+        href: '/admin/sap-queries',
+        icon: FileCode2,
+        requiredPermissions: [PERMISSIONS.SAP_QUERY_MANAGE],
       },
       {
         title: 'Người dùng',

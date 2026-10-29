@@ -90,3 +90,67 @@ model SapStore {
   @@index([sapInactive])
   @@map("sap_stores")
 }
+
+model SapQueryDef {
+  key                  String            @id /// Khóa định danh chuẩn (1 trong 25 khóa: funnel, t1..ap, chain_po..chain_ap, ret_po..ret_whs, ret_old_1..ret_old_5)
+  flow                 String            /// 'ban' | 'tra'
+  stage                String            /// 'list' | 'chain' | 'main' | 'old_discovery'
+  sortOrder            Int               /// Thứ tự 1..25 theo đúng tài liệu
+  title                String            /// Nhãn tiếng Việt dễ hiểu cho IT
+  description          String            /// Mô tả vai trò nghiệp vụ và nguồn bảng
+  impactBadges         String[]          @default([]) /// Danh sách vùng UI/KPI bị ảnh hưởng
+  allowedPlaceholders  String[]          @default([]) /// Danh sách biến runtime bắt buộc giữ (vd: ['{d}', '{br}'])
+  requiredColumns      String[]          @default([]) /// Hợp đồng cột bắt buộc (Core Columns)
+  baselineColumns      String[]          @default([]) /// Toàn bộ cột trả về của câu gốc v1 (kể cả cột ẩn như PO DocEntry, Kho PO min/max)
+  dedupKeys            String[]          @default([]) /// Khóa khử trùng theo đặc tả 12.5
+  supportsExtraColumns Boolean           @default(true)
+  defaultSql           String            /// Câu Full SQL gốc (Seed v1) dùng để đối chiếu & khôi phục
+  currentVersionNo     Int               @default(1)
+  lastTestedSqlHash    String?           /// SHA-256 của câu SQL đã chuẩn hóa vượt qua Review & Validate gần nhất
+  lastTestedAt         DateTime?
+  lastTestedById       String?
+  lastTestRowCount     Int?
+  lastTestDurationMs   Int?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  versions             SapQueryVersion[]
+  audits               SapQueryAudit[]
+
+  @@index([flow, sortOrder])
+  @@map("sap_query_defs")
+}
+
+model SapQueryVersion {
+  id          String      @id @default(cuid())
+  queryKey    String
+  query       SapQueryDef @relation(fields: [queryKey], references: [key], onDelete: Cascade)
+  versionNo   Int
+  sqlText     String
+  sqlHash     String
+  changeNote  String
+  createdById String?
+  createdBy   String?
+  createdAt   DateTime    @default(now())
+
+  @@unique([queryKey, versionNo])
+  @@index([queryKey, versionNo])
+  @@map("sap_query_versions")
+}
+
+model SapQueryAudit {
+  id          String      @id @default(cuid())
+  queryKey    String
+  query       SapQueryDef @relation(fields: [queryKey], references: [key], onDelete: Cascade)
+  action      String      /// 'review' | 'publish' | 'rollback' | 'reset_default'
+  fromVersion Int?
+  toVersion   Int?
+  beforeSql   String?
+  afterSql    String?
+  changeNote  String?
+  actorId     String?
+  actorName   String?
+  createdAt   DateTime    @default(now())
+
+  @@index([queryKey, createdAt])
+  @@map("sap_query_audits")
+}

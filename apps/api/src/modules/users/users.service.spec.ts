@@ -76,7 +76,7 @@ describe('UsersService', () => {
   describe('getPermissionCatalog', () => {
     it('returns catalog items and role mapping', () => {
       const catalog = service.getPermissionCatalog();
-      expect(catalog.permissions.length).toBe(5);
+      expect(catalog.permissions.length).toBe(6);
       expect(catalog.roles.ADMIN).toEqual(['*']);
       expect(catalog.roles.EMPLOYEE).toEqual([PERMISSIONS.SAP_MONITOR_READ]);
     });

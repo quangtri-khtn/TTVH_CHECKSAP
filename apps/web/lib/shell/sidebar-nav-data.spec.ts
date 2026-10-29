@@ -17,6 +17,7 @@ describe('getNavGroups', () => {
     expect(groups[1]?.items.map((i) => i.href)).toEqual([
       '/admin/sap-connections',
       '/admin/sap-stores',
+      '/admin/sap-queries',
       '/admin/users',
     ]);
   });
@@ -30,6 +31,12 @@ describe('getNavGroups', () => {
     const groups = getNavGroups([PERMISSIONS.SAP_STORE_MANAGE]);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.items.map((i) => i.href)).toEqual(['/admin/sap-stores']);
+  });
+
+  it('người dùng có quyền sap-query:manage thấy mục Câu truy vấn SAP trong nhóm Quản trị', () => {
+    const groups = getNavGroups([PERMISSIONS.SAP_QUERY_MANAGE]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.items.map((i) => i.href)).toEqual(['/admin/sap-queries']);
   });
 });
 

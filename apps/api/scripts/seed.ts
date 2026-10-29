@@ -4,12 +4,14 @@
 import 'dotenv/config';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { createHash } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { Role } from '../src/generated/prisma/enums';
 import { ARGON2_OPTIONS } from '../src/modules/auth/argon2-options.constant';
 import { RETURN_PILOT_STORES } from '../src/modules/sap/lib/sap-constants';
+import { SAP_QUERY_CATALOG } from '../src/modules/sap/queries/sap-query-catalog';
 
 const SAP_BRANDS_SEED = [
   { code: '5001', name: 'Maycha', sortOrder: 1 },
@@ -101,6 +103,64 @@ async function seed() {
   });
   console.log(`[seed] SAP brand 5001 stores activated: ${brand5001Res.count}`);
   console.log(`[seed] SAP pilot stores upserted: ${RETURN_PILOT_STORES.length}`);
+
+  for (const entry of SAP_QUERY_CATALOG) {
+    const normalizedSql = entry.defaultSql.replace(/\r\n/g, '\n').trim();
+    const sqlHash = createHash('sha256').update(normalizedSql).digest('hex');
+
+    await prisma.sapQueryDef.upsert({
+      where: { key: entry.key },
+      update: {
+        flow: entry.flow,
+        stage: entry.stage,
+        sortOrder: entry.sortOrder,
+        title: entry.title,
+        description: entry.description,
+        impactBadges: [...entry.impactBadges],
+        allowedPlaceholders: [...entry.allowedPlaceholders],
+        requiredColumns: [...entry.requiredColumns],
+        baselineColumns: [...entry.baselineColumns],
+        dedupKeys: [...entry.dedupKeys],
+        supportsExtraColumns: entry.supportsExtraColumns,
+        defaultSql: entry.defaultSql,
+      },
+      create: {
+        key: entry.key,
+        flow: entry.flow,
+        stage: entry.stage,
+        sortOrder: entry.sortOrder,
+        title: entry.title,
+        description: entry.description,
+        impactBadges: [...entry.impactBadges],
+        allowedPlaceholders: [...entry.allowedPlaceholders],
+        requiredColumns: [...entry.requiredColumns],
+        baselineColumns: [...entry.baselineColumns],
+        dedupKeys: [...entry.dedupKeys],
+        supportsExtraColumns: entry.supportsExtraColumns,
+        defaultSql: entry.defaultSql,
+        currentVersionNo: 1,
+      },
+    });
+
+    await prisma.sapQueryVersion.upsert({
+      where: {
+        queryKey_versionNo: {
+          queryKey: entry.key,
+          versionNo: 1,
+        },
+      },
+      update: {},
+      create: {
+        queryKey: entry.key,
+        versionNo: 1,
+        sqlText: entry.defaultSql,
+        sqlHash,
+        changeNote: 'Phiên bản mặc định ban đầu (Seed v1)',
+        createdBy: 'system-seed',
+      },
+    });
+  }
+  console.log(`[seed] SAP query catalog upserted: ${SAP_QUERY_CATALOG.length}`);
   await app.close();
   process.exit(0);
 }

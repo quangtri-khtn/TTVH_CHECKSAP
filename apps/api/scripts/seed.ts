@@ -1,7 +1,16 @@
 // Must run before any import that reads process.env.DATABASE_URL at
 // module-load time (PrismaService's adapter reads it directly) — same
 // reasoning as main.ts's leading dotenv/config import.
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const cliNodeEnv = process.env.NODE_ENV;
+const rootEnv = resolve(__dirname, '../../../.env');
+const apiEnv = resolve(__dirname, '../.env');
+if (existsSync(rootEnv)) dotenv.config({ path: rootEnv, override: true });
+if (existsSync(apiEnv)) dotenv.config({ path: apiEnv, override: true });
+if (cliNodeEnv) process.env.NODE_ENV = cliNodeEnv;
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { createHash } from 'node:crypto';

@@ -4,6 +4,7 @@ import { BadRequestException } from '@nestjs/common';
 
 const SAP_DATE_REGEX = /^\d{8}$/;
 const SAP_BRAND_REGEX = /^[A-Za-z0-9]{1,10}$/;
+const SAP_BRAND_OPTIONAL_REGEX = /^[A-Za-z0-9]{0,10}$/;
 
 /**
  * Kiểm tra chuỗi ngày SAP dạng `YYYYMMDD` và là ngày lịch có thật.
@@ -33,15 +34,55 @@ export function assertSapDate(value: string): void {
 }
 
 /**
- * Kiểm tra mã thương hiệu (`OWHS.U_Brand`): chỉ gồm chữ cái ASCII và chữ số, dài 1–10 ký tự.
- * Siết chặt hơn `\w{1,10}` của desktop (`:3171`, `:3824`) để loại bỏ dấu gạch dưới và ký tự Unicode.
+ * Kiểm tra khoảng ngày `Từ ngày` (`dateFrom`) và `Đến ngày` (`dateTo`, tùy chọn).
+ * Cả hai phải đúng định dạng `YYYYMMDD` hợp lệ và `dateFrom <= dateTo`.
  */
-export function assertSapBrand(value: string): void {
-  if (typeof value !== 'string' || !SAP_BRAND_REGEX.test(value)) {
+export function assertSapDateRange(dateFrom: string, dateTo?: string): void {
+  assertSapDate(dateFrom);
+  if (dateTo !== undefined && dateTo !== '') {
+    assertSapDate(dateTo);
+    if (dateFrom > dateTo) {
+      throw new BadRequestException(
+        'Từ ngày phải nhỏ hơn hoặc bằng Đến ngày.',
+      );
+    }
+  }
+}
+
+/**
+ * Kiểm tra mã thương hiệu (`OWHS.U_Brand`): mặc định cho phép chuỗi rỗng `""` (= mọi thương hiệu)
+ * hoặc gồm chữ cái ASCII và chữ số, dài 1–10 ký tự.
+ */
+export function assertSapBrand(
+  value: string,
+  options: { readonly allowEmpty?: boolean } = { allowEmpty: true },
+): void {
+  const allowEmpty = options.allowEmpty ?? true;
+  const regex = allowEmpty ? SAP_BRAND_OPTIONAL_REGEX : SAP_BRAND_REGEX;
+  if (typeof value !== 'string' || !regex.test(value)) {
     throw new BadRequestException(
-      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII)',
+      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII, hoặc để trống = mọi brand)',
     );
   }
+}
+
+/**
+ * Chuyển mọi cụm `"DocDate" >= '${dateFrom}'` thành `"DocDate" BETWEEN '${dateFrom}' AND '${dateTo}'`
+ * trước khi bọc `OPENQUERY` (Mục 4.1 & Phụ lục C.1 Đặc tả v1.1).
+ * Giữ nguyên `"CreateDate" >= '${dateFrom}'` và `"DocDate" < '${dateFrom}'`.
+ */
+export function applyDateTo(
+  sqlText: string,
+  dateFrom: string,
+  dateTo?: string,
+): string {
+  assertSapDateRange(dateFrom, dateTo);
+  if (!dateTo || dateTo === '') {
+    return sqlText;
+  }
+  return sqlText
+    .split(`"DocDate" >= '${dateFrom}'`)
+    .join(`"DocDate" BETWEEN '${dateFrom}' AND '${dateTo}'`);
 }
 
 /**

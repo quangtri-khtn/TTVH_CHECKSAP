@@ -26,18 +26,22 @@ export interface ResolvedGridData {
   exportSourceKey: string;
 }
 
-export function getYesterdaySapDate(now: Date = new Date()): string {
-  const yesterday = new Date(now.getTime() - 86_400_000);
+export function getTodaySapDate(now: Date = new Date()): string {
   const iso = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(yesterday);
+  }).format(now);
   return iso.replaceAll('-', '');
 }
 
+export function getYesterdaySapDate(now: Date = new Date()): string {
+  return getTodaySapDate(new Date(now.getTime() - 86_400_000));
+}
+
 export const DEFAULT_SALES_DATE_FROM = getYesterdaySapDate();
+export const DEFAULT_SALES_DATE_TO = getTodaySapDate();
 export const DEFAULT_SALES_BRAND = '5001';
 
 export const SALES_BRAND_OPTIONS = [
@@ -241,13 +245,24 @@ export function formatSalesGeneratedTime(generatedAt: string | undefined): strin
   }).format(parsedDate);
 }
 
-export function formatSalesScopeLine(dateFrom: string, brand: string): string {
+export function formatSalesScopeLine(
+  dateFrom: string,
+  brand: string,
+  dateTo?: string,
+): string {
   const formattedDate = /^\d{8}$/.test(dateFrom)
     ? `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`
     : dateFrom;
+  const formattedTo =
+    dateTo && /^\d{8}$/.test(dateTo)
+      ? ` đến ${dateTo.slice(6, 8)}/${dateTo.slice(4, 6)}/${dateTo.slice(0, 4)}`
+      : '';
+  const trimmedBrand = brand.trim();
   const brandLabel =
-    brand.toUpperCase() === 'ALL' ? 'tất cả thương hiệu' : `brand ${brand}`;
-  return `Chứng từ từ ${formattedDate} – ${brandLabel}. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ (xem riêng, không tính vào số treo).`;
+    !trimmedBrand || trimmedBrand.toUpperCase() === 'ALL'
+      ? 'tất cả thương hiệu'
+      : `brand ${trimmedBrand}`;
+  return `Chứng từ từ ${formattedDate}${formattedTo} – ${brandLabel}. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ (xem riêng, không tính vào số treo).`;
 }
 export function getSalesMonitorErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {

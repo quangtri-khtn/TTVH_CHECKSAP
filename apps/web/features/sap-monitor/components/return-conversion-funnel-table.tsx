@@ -22,8 +22,13 @@ import {
   type ReturnViewMode,
   formatSapCell,
 } from '@/lib/sap-monitor/return-monitor-domain';
+import {
+  RETURN_CHAIN_QUERY_KEYS,
+  RETURN_OLD_COHORT_QUERY_KEYS,
+  getReturnFunnelStepQueryKeys,
+} from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface ReturnConversionFunnelTableProps {
   funnel: readonly ReturnFunnelStepDto[] | undefined;
   viewMode: ReturnViewMode;
@@ -44,13 +49,23 @@ export function ReturnConversionFunnelTable({
   return (
     <section className="flex flex-col gap-2.5 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold text-foreground">
-          Phễu chuyển đổi từng bước (nhấp bước 3 để xem danh sách A/R chưa xuất hóa đơn)
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xs font-semibold text-foreground">
+            Phễu chuyển đổi từng bước (nhấp bước 3 để xem danh sách A/R chưa xuất hóa đơn)
+          </h2>
+          <SapQueryTagBar
+            label="SQL:"
+            queryKeys={
+              selectedCohort === 'moi'
+                ? RETURN_CHAIN_QUERY_KEYS
+                : [...RETURN_CHAIN_QUERY_KEYS, ...RETURN_OLD_COHORT_QUERY_KEYS]
+            }
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           <Label className="whitespace-nowrap text-xs font-medium text-muted-foreground">
-            Nhóm PO:
+            Nhóm SO:
           </Label>
           <Tabs
             value={selectedCohort}
@@ -145,7 +160,10 @@ export function ReturnConversionFunnelTable({
                     )}
                   >
                     <TableCell className="border-r px-3 py-2.5 align-top whitespace-pre-line leading-relaxed">
-                      {step.label}
+                      <div className="flex flex-col gap-1">
+                        <SapQueryTagBar queryKeys={getReturnFunnelStepQueryKeys(idx)} />
+                        <span>{step.label}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="border-r px-3 py-2.5 align-top text-center">
                       <Badge variant="outline" className="font-mono text-[11px]">

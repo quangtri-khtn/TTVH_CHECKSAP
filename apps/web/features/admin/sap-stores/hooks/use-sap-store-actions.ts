@@ -7,6 +7,7 @@ import {
   getSapBrandsGetQueryKey,
   getSapStoresGetQueryKey,
   useSapStoreUpdate,
+  useSapStoresBulkUpdateByBrand,
   useSapStoresSync,
 } from '@/lib/api/generated/sap-stores/sap-stores';
 import {
@@ -25,6 +26,7 @@ export function useSapStoreActions() {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   const updateMutation = useSapStoreUpdate();
+  const bulkBrandMutation = useSapStoresBulkUpdateByBrand();
   const syncMutation = useSapStoresSync();
 
   const invalidateAllMonitorAndStores = useCallback(async () => {
@@ -36,19 +38,19 @@ export function useSapStoreActions() {
     ]);
   }, [queryClient]);
 
-  const toggleActiveSales = useCallback(
+  const toggleStoreActive = useCallback(
     async (code: string, currentVal: boolean) => {
       setUpdatingStoreCode(code);
       try {
         const nextVal = !currentVal;
         await updateMutation.mutateAsync({
           code,
-          data: { isActiveSales: nextVal },
+          data: { isActiveSales: nextVal, isActiveReturn: nextVal },
         });
         toast.success(
           nextVal
-            ? `Đã bật kho ${code} cho Monitor Bán hàng`
-            : `Đã tắt kho ${code} khỏi Monitor Bán hàng`,
+            ? `Đã bật cho phép Query cho kho ${code}`
+            : `Đã tắt cho phép Query cho kho ${code}`,
         );
         await invalidateAllMonitorAndStores();
       } catch (err) {
@@ -60,28 +62,26 @@ export function useSapStoreActions() {
     [updateMutation, invalidateAllMonitorAndStores],
   );
 
-  const toggleActiveReturn = useCallback(
-    async (code: string, currentVal: boolean) => {
-      setUpdatingStoreCode(code);
+  const toggleBrandActive = useCallback(
+    async (brandCode: string, nextVal: boolean) => {
       try {
-        const nextVal = !currentVal;
-        await updateMutation.mutateAsync({
-          code,
-          data: { isActiveReturn: nextVal },
+        const res = await bulkBrandMutation.mutateAsync({
+          data: { brandCode, isActive: nextVal },
         });
+        const result = res.data.data;
         toast.success(
           nextVal
-            ? `Đã bật kho ${code} cho Monitor Luồng trả`
-            : `Đã tắt kho ${code} khỏi Monitor Luồng trả`,
+            ? `Đã bật ${result.updatedCount} kho hoạt động trên SAP của thương hiệu ${brandCode}`
+            : `Đã tắt toàn bộ (${result.updatedCount}) kho của thương hiệu ${brandCode}`,
         );
         await invalidateAllMonitorAndStores();
       } catch (err) {
-        toast.error(getErrorMessage(err, `Không thể cập nhật trạng thái kho ${code}`));
-      } finally {
-        setUpdatingStoreCode(null);
+        toast.error(
+          getErrorMessage(err, `Không thể cập nhật hàng loạt cho thương hiệu ${brandCode}`),
+        );
       }
     },
-    [updateMutation, invalidateAllMonitorAndStores],
+    [bulkBrandMutation, invalidateAllMonitorAndStores],
   );
 
   const syncStores = useCallback(async () => {
@@ -99,10 +99,11 @@ export function useSapStoreActions() {
   }, [syncMutation, invalidateAllMonitorAndStores]);
 
   return {
-    toggleActiveSales,
-    toggleActiveReturn,
+    toggleStoreActive,
+    toggleBrandActive,
     syncStores,
     isUpdatingStore: updateMutation.isPending,
+    isBulkUpdatingBrand: bulkBrandMutation.isPending,
     updatingStoreCode,
     isSyncing: syncMutation.isPending,
     syncDialogOpen,

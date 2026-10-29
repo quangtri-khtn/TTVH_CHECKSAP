@@ -36,9 +36,11 @@ export class SapReturnMonitorExcelService {
     query: GetReturnMonitorQueryDto,
   ): Promise<{ buffer: Buffer; filename: string }> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo;
     const brand = query.brand ?? MONITOR_DEFAULT_BRAND;
     const data = await this.returnMonitorService.getReturnMonitor({
       dateFrom,
+      dateTo,
       brand,
       refresh: false,
     });
@@ -46,11 +48,18 @@ export class SapReturnMonitorExcelService {
     const { workbook, finishWorkbook } = createStreamingWorkbook();
     const { fileTimestamp, displayTimestamp } = formatVietnamDateTime();
 
-    this.writeOverviewSheet(workbook, data, dateFrom, brand, displayTimestamp);
+    this.writeOverviewSheet(
+      workbook,
+      data,
+      dateFrom,
+      dateTo ?? data.meta.dateTo,
+      brand,
+      displayTimestamp,
+    );
 
     writeStandardWorksheet(
       workbook,
-      'Chi tiet theo PO',
+      'Chi tiet theo SO',
       data.lists.chain.columns,
       data.lists.chain.rows,
     );
@@ -63,9 +72,10 @@ export class SapReturnMonitorExcelService {
     );
 
     const buffer = await finishWorkbook();
+    const toPart = dateTo ? `_${dateTo}` : '';
     return {
       buffer,
-      filename: `Monitor_Luong_Tra_${dateFrom}_${fileTimestamp}.xlsx`,
+      filename: `Monitor_Luong_Tra_${dateFrom}${toPart}_${fileTimestamp}.xlsx`,
     };
   }
 
@@ -73,17 +83,18 @@ export class SapReturnMonitorExcelService {
     query: ExportReturnMonitorGridQueryDto,
   ): Promise<{ buffer: Buffer; filename: string }> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo;
     const brand = query.brand ?? MONITOR_DEFAULT_BRAND;
     const cohort: ReturnMonitorExportCohort = query.cohort ?? 'moi';
-    const viewMode: ReturnMonitorExportViewMode = query.viewMode ?? 'po';
+    const viewMode: ReturnMonitorExportViewMode = query.viewMode ?? 'so';
     const statusFilter = query.statusFilter?.trim() || undefined;
 
     const data = await this.returnMonitorService.getReturnMonitor({
       dateFrom,
+      dateTo,
       brand,
       refresh: false,
     });
-
     const { workbook, finishWorkbook } = createStreamingWorkbook();
     const { fileTimestamp } = formatVietnamDateTime();
 
@@ -113,12 +124,12 @@ export class SapReturnMonitorExcelService {
       );
       if (statusFilter) {
         const statusColIdx = columns.indexOf('Trang thai chuoi chung tu');
-        const effectiveIdx = statusColIdx >= 0 ? statusColIdx : 27;
+        const effectiveIdx = statusColIdx >= 0 ? statusColIdx : 30;
         filteredRows = filteredRows.filter((r) => r[effectiveIdx] === statusFilter);
       }
       writeStandardWorksheet(
         workbook,
-        'Danh sach PO tra hang',
+        'Danh sach SO tra hang',
         columns,
         filteredRows,
       );
@@ -135,6 +146,7 @@ export class SapReturnMonitorExcelService {
     workbook: StreamingWorkbookHandle['workbook'],
     data: ReturnMonitorDataDto,
     dateFrom: string,
+    dateTo: string | undefined,
     brand: string,
     displayTimestamp: string,
   ): void {
@@ -143,10 +155,10 @@ export class SapReturnMonitorExcelService {
 
     const dd = `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}`;
     const cohortEntries = [
-      { key: 'moi' as const, label: `Nhóm mới – PO từ ${dd}` },
+      { key: 'moi' as const, label: `Nhóm mới – SO từ ${dd}` },
       {
         key: 'cu' as const,
-        label: `Nhóm cũ – PO trước ${dd}, còn phát sinh chứng từ từ ${dd}`,
+        label: `Nhóm cũ – SO trước ${dd}, còn phát sinh chứng từ từ ${dd}`,
       },
     ];
 
@@ -155,7 +167,15 @@ export class SapReturnMonitorExcelService {
         'Từ ngày',
         `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`,
       ],
-      ['Brand (U_Brand) + cửa hàng pilot', brand],
+      ...(dateTo
+        ? [
+            [
+              'Đến ngày',
+              `${dateTo.slice(6, 8)}/${dateTo.slice(4, 6)}/${dateTo.slice(0, 4)}`,
+            ] as [string, string],
+          ]
+        : []),
+      ['Brand (U_Brand) + cửa hàng luồng Trả', brand || 'Tất cả thương hiệu'],
       ['Xuất lúc', displayTimestamp],
       ['', ''],
       ['Phễu chuyển đổi từng bước', ''],
@@ -180,7 +200,7 @@ export class SapReturnMonitorExcelService {
     for (const { key: cohortKey, label: cohortLabel } of cohortEntries) {
       overviewRows.push(
         ['', ''],
-        [`Trạng thái chuỗi chứng từ theo PO – ${cohortLabel}`, 'Số PO'],
+        [`Trạng thái chuỗi chứng từ theo SO – ${cohortLabel}`, 'Số SO'],
       );
       for (const item of RET_STATUS_ITEMS) {
         overviewRows.push([
@@ -188,7 +208,7 @@ export class SapReturnMonitorExcelService {
           data.cohorts[cohortKey].statusCounts[item.key],
         ]);
       }
-      overviewRows.push(['Tổng số PO trả hàng', data.cohorts[cohortKey].poCount]);
+      overviewRows.push(['Tổng số SO trả hàng', data.cohorts[cohortKey].poCount]);
     }
 
     for (const item of overviewRows) {
@@ -202,9 +222,8 @@ export class SapReturnMonitorExcelService {
       const isCohortOrStatusTitle =
         col0.startsWith('Nhóm') ||
         col0.startsWith('Trạng thái') ||
-        col0 === 'Tổng số PO trả hàng' ||
-        item[1] === 'Số PO';
-
+        col0 === 'Tổng số SO trả hàng' ||
+        item[1] === 'Số SO';
       if (
         Boolean(col0) &&
         (isSectionHeader || isFunnelHeader || isCohortOrStatusTitle)

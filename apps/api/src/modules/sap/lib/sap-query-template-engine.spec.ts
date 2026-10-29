@@ -39,20 +39,31 @@ describe('sap-query-template-engine', () => {
   });
 
   describe('renderCatalogSql', () => {
-    it('expands all 25 catalog entries identically to legacy query builders', () => {
+    it('expands all 25 catalog entries identically to query builders (including dateTo and empty brand)', () => {
       const dateFrom = '20261007';
+      const dateTo = '20261028';
       const brand = '5001';
-      const poNumbers = [1001, 1002];
+      const docNumbers = [1001, 1002];
 
-      const salesListOracle = buildSalesListQueries(dateFrom, brand);
+      const salesListOracle = buildSalesListQueries(dateFrom, brand, dateTo);
       for (const key of SAP_SALES_LIST_QUERY_KEYS) {
         const entry = SAP_QUERY_CATALOG_BY_KEY[key];
-        expect(renderCatalogSql(entry.defaultSql, { dateFrom, brand })).toBe(
-          salesListOracle[key as SalesListQueryKey],
-        );
+        expect(
+          renderCatalogSql(entry.defaultSql, {
+            dateFrom,
+            dateTo,
+            brand,
+            autoDateUpper: entry.autoDateUpper,
+          }).trim(),
+        ).toBe(salesListOracle[key as SalesListQueryKey].trim());
       }
 
-      const salesChainOracle = buildSalesChainQueries(dateFrom, brand, poNumbers);
+      const salesChainOracle = buildSalesChainQueries(
+        dateFrom,
+        brand,
+        docNumbers,
+        dateTo,
+      );
       const salesChainMap: Record<
         (typeof SAP_SALES_CHAIN_QUERY_KEYS)[number],
         SalesChainQueryKey
@@ -66,19 +77,26 @@ describe('sap-query-template-engine', () => {
       for (const key of SAP_SALES_CHAIN_QUERY_KEYS) {
         const entry = SAP_QUERY_CATALOG_BY_KEY[key];
         expect(
-          renderCatalogSql(entry.defaultSql, { dateFrom, brand, poNumbers }),
-        ).toBe(salesChainOracle[salesChainMap[key]]);
+          renderCatalogSql(entry.defaultSql, {
+            dateFrom,
+            dateTo,
+            brand,
+            autoDateUpper: entry.autoDateUpper,
+            poNumbers: docNumbers,
+          }).trim(),
+        ).toBe(salesChainOracle[salesChainMap[key]].trim());
       }
 
       const returnMainOracle = buildReturnQueries(dateFrom, brand, {
-        poNumbers,
+        soNumbers: docNumbers,
+        dateTo,
       });
       const returnMainMap: Record<
         (typeof SAP_RETURN_MAIN_QUERY_KEYS)[number],
         ReturnListQueryKey
       > = {
-        ret_po: 'po',
         ret_so: 'so',
+        ret_po: 'po',
         ret_do: 'do',
         ret_ar: 'ar',
         ret_grpo: 'grpo',
@@ -88,52 +106,65 @@ describe('sap-query-template-engine', () => {
       for (const key of SAP_RETURN_MAIN_QUERY_KEYS) {
         const entry = SAP_QUERY_CATALOG_BY_KEY[key];
         expect(
-          renderCatalogSql(entry.defaultSql, { dateFrom, brand, poNumbers }),
+          renderCatalogSql(entry.defaultSql, {
+            dateFrom,
+            dateTo,
+            brand,
+            autoDateUpper: entry.autoDateUpper,
+            soNumbers: docNumbers,
+          }),
         ).toBe(returnMainOracle[returnMainMap[key]]);
       }
 
       for (const key of SAP_RETURN_OLD_QUERY_KEYS) {
         const entry = SAP_QUERY_CATALOG_BY_KEY[key];
-        const rendered = renderCatalogSql(entry.defaultSql, { dateFrom, brand });
+        const rendered = renderCatalogSql(entry.defaultSql, {
+          dateFrom,
+          dateTo,
+          brand,
+          autoDateUpper: entry.autoDateUpper,
+        });
         expect(rendered).toContain("select * from openquery(hana_mc, '");
-        expect(rendered).toContain('P."DocDate" < \'\'20261007\'\'');
+        expect(rendered).toContain('S."DocDate" < \'\'20261007\'\'');
       }
     });
 
-    it('expands brand=ALL safely across Sales ({br}) and all 6 Return ({brand}) queries, and fails closed on unsupported {brand} patterns', () => {
+    it('expands empty brand and brand=ALL safely across Sales ({br}) and Return ({brand_cond}) queries', () => {
       const dateFrom = '20261007';
-      for (const key of SAP_SALES_LIST_QUERY_KEYS) {
-        const rendered = renderCatalogSql(SAP_QUERY_CATALOG_BY_KEY[key].defaultSql, {
-          dateFrom,
-          brand: 'ALL',
-        });
-        expect(rendered).toContain('W."U_Brand" IS NOT NULL');
-        expect(rendered).not.toContain("''ALL''");
-      }
+      for (const brand of ['', 'ALL']) {
+        for (const key of SAP_SALES_LIST_QUERY_KEYS) {
+          const rendered = renderCatalogSql(
+            SAP_QUERY_CATALOG_BY_KEY[key].defaultSql,
+            { dateFrom, brand },
+          );
+          expect(rendered).toContain('JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store"');
+          expect(rendered).not.toContain('W."U_Brand" =');
+        }
 
-      for (const key of ['ret_po', ...SAP_RETURN_OLD_QUERY_KEYS] as const) {
-        const rendered = renderCatalogSql(SAP_QUERY_CATALOG_BY_KEY[key].defaultSql, {
-          dateFrom,
-          brand: 'ALL',
-        });
-        expect(rendered).toContain('W."U_Brand" IS NOT NULL');
-        expect(rendered).not.toContain('{brand}');
-        expect(rendered).not.toContain("''ALL''");
+        for (const key of ['ret_so', ...SAP_RETURN_OLD_QUERY_KEYS] as const) {
+          const rendered = renderCatalogSql(
+            SAP_QUERY_CATALOG_BY_KEY[key].defaultSql,
+            { dateFrom, brand },
+          );
+          expect(rendered).not.toContain('{brand_cond}');
+          expect(rendered).not.toContain('W."U_Brand" =');
+        }
       }
-
-      expect(() =>
-        renderCatalogSql(
-          `SELECT P."DocNum" FROM kbmd_live.OPOR P LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = 'MC01' WHERE W."U_Brand" IN ('{brand}')`,
-          { dateFrom, brand: 'ALL' },
-        ),
-      ).toThrow(BadRequestException);
     });
 
-    it('rejects invalid dateFrom, brand (SQL injection attempt), or empty/negative poNumbers', () => {
+    it('rejects invalid dateFrom, dateFrom > dateTo, brand (SQL injection attempt), or empty/negative poNumbers', () => {
       const sql = SAP_QUERY_CATALOG_BY_KEY.t1.defaultSql;
 
       expect(() =>
         renderCatalogSql(sql, { dateFrom: '2026-10-07', brand: '5001' }),
+      ).toThrow(BadRequestException);
+
+      expect(() =>
+        renderCatalogSql(sql, {
+          dateFrom: '20261028',
+          dateTo: '20261007',
+          brand: '5001',
+        }),
       ).toThrow(BadRequestException);
 
       expect(() =>

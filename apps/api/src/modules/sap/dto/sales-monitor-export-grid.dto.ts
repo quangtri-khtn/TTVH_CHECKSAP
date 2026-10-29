@@ -22,12 +22,17 @@ export class ExportSalesMonitorGridQueryDto {
   dateFrom?: string = MONITOR_DEFAULT_DATE;
 
   @IsOptional()
-  @Matches(/^[A-Za-z0-9]{1,10}$/, {
+  @Matches(/^\d{8}$/, {
+    message: 'Ngày truy vấn SAP không hợp lệ (yêu cầu định dạng YYYYMMDD)',
+  })
+  dateTo?: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9]{0,10}$/, {
     message:
-      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII)',
+      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII, hoặc để trống = mọi brand)',
   })
   brand?: string = MONITOR_DEFAULT_BRAND;
-
   @IsOptional()
   @IsIn(SALES_MONITOR_EXPORT_COHORTS, {
     message: 'Tham số cohort chỉ chấp nhận moi, cu hoặc tatCa',

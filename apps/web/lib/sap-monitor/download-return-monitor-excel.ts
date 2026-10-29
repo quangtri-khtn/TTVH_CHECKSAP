@@ -49,25 +49,32 @@ async function triggerBlobDownload(res: Response, fallbackFilename: string): Pro
 
 export async function downloadReturnMonitorDetailExcel(params: {
   dateFrom: string;
+  dateTo?: string;
   brand: string;
 }): Promise<void> {
-  const qs = new URLSearchParams({
+  const searchParams = new URLSearchParams({
     dateFrom: params.dateFrom,
-    brand: params.brand,
-  }).toString();
+    brand: params.brand === 'ALL' ? '' : params.brand,
+  });
+  if (params.dateTo) {
+    searchParams.set('dateTo', params.dateTo);
+  }
 
-  const res = await authedFetch(`${getApiBase()}/sap/return-monitor/export?${qs}`);
+  const res = await authedFetch(
+    `${getApiBase()}/sap/return-monitor/export?${searchParams.toString()}`,
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? 'Không thể xuất file Excel chi tiết luồng trả.');
   }
 
-  const fallback = `Monitor_Tra_Chi_Tiet_${params.dateFrom}_Brand${params.brand}.xlsx`;
+  const fallback = `Monitor_Tra_Chi_Tiet_${params.dateFrom}_Brand${params.brand || 'ALL'}.xlsx`;
   await triggerBlobDownload(res, fallback);
 }
 
 export async function downloadReturnMonitorGridExcel(params: {
   dateFrom: string;
+  dateTo?: string;
   brand: string;
   cohort: CohortFilter;
   viewMode: ReturnViewMode;
@@ -75,10 +82,13 @@ export async function downloadReturnMonitorGridExcel(params: {
 }): Promise<void> {
   const searchParams = new URLSearchParams({
     dateFrom: params.dateFrom,
-    brand: params.brand,
+    brand: params.brand === 'ALL' ? '' : params.brand,
     cohort: params.cohort,
     viewMode: params.viewMode,
   });
+  if (params.dateTo) {
+    searchParams.set('dateTo', params.dateTo);
+  }
   if (params.statusFilter) {
     searchParams.set('statusFilter', params.statusFilter);
   }
@@ -90,7 +100,6 @@ export async function downloadReturnMonitorGridExcel(params: {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? 'Không thể xuất file Excel danh sách luồng trả.');
   }
-
   const fallback =
     params.viewMode === 'ar_noinv'
       ? `Monitor_Tra_AR_Chua_Xuat_HD_${params.dateFrom}_Brand${params.brand}.xlsx`

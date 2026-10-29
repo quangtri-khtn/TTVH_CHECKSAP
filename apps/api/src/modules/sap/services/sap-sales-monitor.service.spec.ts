@@ -152,6 +152,7 @@ describe('SapSalesMonitorService (Frozen Snapshot, Active Store Filtering & Extr
       snapshot,
       '20261007',
       '5001',
+      expect.stringMatching(/^\d{8}$/),
     );
     expect(res.cohorts.tatCa.poCount).toBe(1);
     expect(res.lists.chain.columns).toEqual([...CHAIN_COLUMNS]);
@@ -161,7 +162,7 @@ describe('SapSalesMonitorService (Frozen Snapshot, Active Store Filtering & Extr
     expect(res.lists.t1.rows[0][1]).toBe('MC001');
   });
 
-  it('fallback giữ nguyên toàn bộ kho khi activeStoreCodes rỗng (Set.size === 0)', async () => {
+  it('trả về danh sách rỗng khi activeStoreCodes rỗng (Set.size === 0)', async () => {
     const { service } = createMocks([]);
 
     const res = await service.getSalesMonitor({
@@ -169,9 +170,9 @@ describe('SapSalesMonitorService (Frozen Snapshot, Active Store Filtering & Extr
       brand: '5001',
     });
 
-    expect(res.cohorts.tatCa.poCount).toBe(2);
-    expect(res.lists.chain.rows).toHaveLength(2);
-    expect(res.lists.t1.rows).toHaveLength(2);
+    expect(res.cohorts.tatCa.poCount).toBe(0);
+    expect(res.lists.chain.rows).toHaveLength(0);
+    expect(res.lists.t1.rows).toHaveLength(0);
   });
 
   it('tự động vô hiệu hóa cache 60s ngay khi configEpoch của SapStoreService hoặc SapQueryConfigService tăng', async () => {
@@ -258,6 +259,7 @@ describe('SapSalesMonitorService (Frozen Snapshot, Active Store Filtering & Extr
       '20261007',
       '5001',
       [900],
+      expect.stringMatching(/^\d{8}$/),
     );
   });
 });

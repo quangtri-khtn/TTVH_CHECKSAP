@@ -7,7 +7,7 @@ export const RETURN_MONITOR_EXPORT_COHORTS = ['moi', 'cu', 'tatCa'] as const;
 export type ReturnMonitorExportCohort =
   (typeof RETURN_MONITOR_EXPORT_COHORTS)[number];
 
-export const RETURN_MONITOR_EXPORT_VIEW_MODES = ['po', 'ar_noinv'] as const;
+export const RETURN_MONITOR_EXPORT_VIEW_MODES = ['so', 'po', 'ar_noinv'] as const;
 export type ReturnMonitorExportViewMode =
   (typeof RETURN_MONITOR_EXPORT_VIEW_MODES)[number];
 
@@ -24,17 +24,26 @@ export class ExportReturnMonitorGridQueryDto {
   dateFrom?: string = MONITOR_DEFAULT_DATE;
 
   @ApiPropertyOptional({
+    description: 'Đến ngày theo định dạng YYYYMMDD (mặc định ngày hiện tại)',
+    example: '20261028',
+  })
+  @IsOptional()
+  @Matches(/^\d{8}$/, {
+    message: 'Ngày truy vấn SAP không hợp lệ (yêu cầu định dạng YYYYMMDD)',
+  })
+  dateTo?: string;
+
+  @ApiPropertyOptional({
     default: MONITOR_DEFAULT_BRAND,
-    description: 'Mã thương hiệu 1-10 ký tự chữ và số ASCII (ví dụ 5001)',
+    description: 'Mã thương hiệu 0-10 ký tự chữ và số ASCII (ví dụ 5001, để trống = mọi brand)',
     example: '5001',
   })
   @IsOptional()
-  @Matches(/^[A-Za-z0-9]{1,10}$/, {
+  @Matches(/^[A-Za-z0-9]{0,10}$/, {
     message:
-      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII)',
+      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII, hoặc để trống = mọi brand)',
   })
   brand?: string = MONITOR_DEFAULT_BRAND;
-
   @ApiPropertyOptional({
     default: 'moi',
     enum: RETURN_MONITOR_EXPORT_COHORTS,

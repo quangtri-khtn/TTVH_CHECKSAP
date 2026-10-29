@@ -1,7 +1,9 @@
 import { wrapOpenquery } from '../lib/openquery';
 import { SALES_PO_VENDOR_CODE } from '../lib/sap-constants';
+import { applyDateTo } from '../lib/sap-query-params';
 import {
   buildReturnQueries,
+  type ReturnCandidatesQueryKey,
   type ReturnListQueryKey,
 } from './return-monitor-queries';
 import {
@@ -19,41 +21,53 @@ import {
   SAP_SALES_LIST_QUERY_KEYS,
   getSapQueryCatalogEntry,
   isSapQueryKey,
+  type SapQueryCatalogEntry,
 } from './sap-query-catalog';
 
 function expandTemplate(
-  sqlText: string,
+  entry: SapQueryCatalogEntry,
   opts: {
     readonly dateFrom: string;
-    readonly brand: string;
-    readonly poNumbers?: readonly number[];
+    readonly dateTo?: string;
+    readonly brand?: string;
+    readonly docNumbers?: readonly number[];
   },
 ): string {
-  const { dateFrom, brand, poNumbers } = opts;
-  const br = `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${brand}'`;
+  const { dateFrom, dateTo, brand = '', docNumbers } = opts;
+  const normalizedBrand =
+    brand.trim().toUpperCase() === 'ALL' ? '' : brand.trim();
+  const br = normalizedBrand
+    ? `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${normalizedBrand}'`
+    : `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store"`;
+  const brandCond = normalizedBrand
+    ? ` AND W."U_Brand" = '${normalizedBrand}'`
+    : '';
   const poFilter =
-    poNumbers !== undefined
-      ? `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocNum" IN (${poNumbers.join(', ')})`
+    docNumbers !== undefined
+      ? `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocNum" IN (${docNumbers.join(', ')})`
       : `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocDate" >= '${dateFrom}'`;
   const dateCond =
-    poNumbers !== undefined
-      ? `P."DocNum" IN (${poNumbers.join(', ')})`
-      : `P."DocDate" >= '${dateFrom}'`;
+    docNumbers !== undefined
+      ? `S."DocNum" IN (${docNumbers.join(', ')})`
+      : `S."DocDate" >= '${dateFrom}'`;
 
   const replacements: Record<string, string> = {
     '{d}': dateFrom,
     '{br}': br,
     '{po_filter}': poFilter,
-    '{brand}': brand,
+    '{brand_cond}': brandCond,
     '{date_cond}': dateCond,
   };
 
-  return sqlText.replace(
-    /\{(d|br|po_filter|brand|date_cond)\}/g,
+  const rendered = entry.defaultSql.replace(
+    /\{(d|br|po_filter|brand_cond|date_cond)\}/g,
     (match) => replacements[match] ?? match,
   );
-}
 
+  return entry.autoDateUpper && docNumbers === undefined && dateTo
+    ? applyDateTo(rendered, dateFrom, dateTo)
+    : rendered;
+}
 describe('SAP_QUERY_CATALOG', () => {
   it('defines exactly 25 queries split into 13 sales (ban) and 12 return (tra) sorted 1..25', () => {
     expect(SAP_QUERY_CATALOG).toHaveLength(25);
@@ -85,39 +99,48 @@ describe('SAP_QUERY_CATALOG', () => {
     expect(getSapQueryCatalogEntry('unknown_key')).toBeUndefined();
   });
 
-  it('includes internal baseline columns (PO DocEntry on chain_po, Kho PO min/max on ret_po)', () => {
+  it('includes internal baseline columns (PO DocEntry on chain_po, SO Canceled & Kho min/max on ret_so/ret_po/ret_grpo)', () => {
     expect(SAP_QUERY_CATALOG_BY_KEY.chain_po.requiredColumns).not.toContain(
       'PO DocEntry',
     );
     expect(SAP_QUERY_CATALOG_BY_KEY.chain_po.baselineColumns).toContain(
       'PO DocEntry',
     );
+    expect(SAP_QUERY_CATALOG_BY_KEY.ret_so.baselineColumns).toEqual(
+      expect.arrayContaining(['SO Canceled', 'Kho SO min', 'Kho SO max']),
+    );
     expect(SAP_QUERY_CATALOG_BY_KEY.ret_po.baselineColumns).toEqual(
       expect.arrayContaining(['Kho PO min', 'Kho PO max']),
     );
+    expect(SAP_QUERY_CATALOG_BY_KEY.ret_ap.baselineColumns).toContain(
+      'AP Invoice No',
+    );
   });
 
-  it('matches buildSalesListQueries character-for-character across all 8 list queries', () => {
+  it('matches buildSalesListQueries character-for-character across all 8 list queries (with brand, empty brand, and dateTo)', () => {
     const dateFrom = '20261007';
-    const brand = '5001';
-    const oracle = buildSalesListQueries(dateFrom, brand);
+    const dateTo = '20261028';
 
-    for (const key of SAP_SALES_LIST_QUERY_KEYS) {
-      const entry = SAP_QUERY_CATALOG_BY_KEY[key];
-      const rendered = wrapOpenquery(
-        expandTemplate(entry.defaultSql, { dateFrom, brand }),
-      );
-      expect(rendered).toBe(oracle[key as SalesListQueryKey]);
+    for (const brand of ['5001', '']) {
+      const oracle = buildSalesListQueries(dateFrom, brand, dateTo);
+      for (const key of SAP_SALES_LIST_QUERY_KEYS) {
+        const entry = SAP_QUERY_CATALOG_BY_KEY[key];
+        const rendered = wrapOpenquery(
+          expandTemplate(entry, { dateFrom, dateTo, brand }),
+        );
+        expect(rendered.trim()).toBe(oracle[key as SalesListQueryKey].trim());
+      }
     }
   });
 
-  it('matches buildSalesChainQueries character-for-character in both date mode and PO batch mode', () => {
+  it('matches buildSalesChainQueries character-for-character in date mode (with dateTo) and PO batch mode', () => {
     const dateFrom = '20261007';
+    const dateTo = '20261028';
     const brand = '5002';
     const poBatch = [1001, 1002, 1003];
 
-    const oracleDate = buildSalesChainQueries(dateFrom, brand);
-    const oracleBatch = buildSalesChainQueries(dateFrom, brand, poBatch);
+    const oracleDate = buildSalesChainQueries(dateFrom, brand, undefined, dateTo);
+    const oracleBatch = buildSalesChainQueries(dateFrom, brand, poBatch, dateTo);
 
     const keyMap: Record<
       (typeof SAP_SALES_CHAIN_QUERY_KEYS)[number],
@@ -135,37 +158,33 @@ describe('SAP_QUERY_CATALOG', () => {
       const legacyKey = keyMap[catalogKey];
 
       const renderedDate = wrapOpenquery(
-        expandTemplate(entry.defaultSql, { dateFrom, brand }),
+        expandTemplate(entry, { dateFrom, dateTo, brand }),
       );
-      expect(renderedDate).toBe(oracleDate[legacyKey]);
+      expect(renderedDate.trim()).toBe(oracleDate[legacyKey].trim());
 
       const renderedBatch = wrapOpenquery(
-        expandTemplate(entry.defaultSql, {
+        expandTemplate(entry, {
           dateFrom,
+          dateTo,
           brand,
-          poNumbers: poBatch,
+          docNumbers: poBatch,
         }),
       );
-      expect(renderedBatch).toBe(oracleBatch[legacyKey]);
+      expect(renderedBatch.trim()).toBe(oracleBatch[legacyKey].trim());
     }
   });
 
-  it('matches buildReturnQueries character-for-character across all 7 main return queries (date mode and PO batch mode)', () => {
+  it('matches buildReturnQueries character-for-character across all 7 main SO-based return queries (date mode with dateTo, empty brand, and SO batch mode)', () => {
     const dateFrom = '20261007';
-    const brand = '5001';
-    const poBatch = [2001, 2002];
-
-    const oracleDate = buildReturnQueries(dateFrom, brand);
-    const oracleBatch = buildReturnQueries(dateFrom, brand, {
-      poNumbers: poBatch,
-    });
+    const dateTo = '20261028';
+    const soBatch = [5565, 5568];
 
     const keyMap: Record<
       (typeof SAP_RETURN_MAIN_QUERY_KEYS)[number],
       ReturnListQueryKey
     > = {
-      ret_po: 'po',
       ret_so: 'so',
+      ret_po: 'po',
       ret_do: 'do',
       ret_ar: 'ar',
       ret_grpo: 'grpo',
@@ -173,42 +192,62 @@ describe('SAP_QUERY_CATALOG', () => {
       ret_whs: 'whs',
     };
 
-    for (const catalogKey of SAP_RETURN_MAIN_QUERY_KEYS) {
-      const entry = SAP_QUERY_CATALOG_BY_KEY[catalogKey];
-      const legacyKey = keyMap[catalogKey];
+    for (const brand of ['5001', '']) {
+      const oracleDate = buildReturnQueries(dateFrom, brand, { dateTo });
+      const oracleBatch = buildReturnQueries(dateFrom, brand, {
+        soNumbers: soBatch,
+        dateTo,
+      });
 
-      const renderedDate = wrapOpenquery(
-        expandTemplate(entry.defaultSql, { dateFrom, brand }),
-      );
-      expect(renderedDate).toBe(oracleDate[legacyKey]);
+      for (const catalogKey of SAP_RETURN_MAIN_QUERY_KEYS) {
+        const entry = SAP_QUERY_CATALOG_BY_KEY[catalogKey];
+        const legacyKey = keyMap[catalogKey];
 
-      const renderedBatch = wrapOpenquery(
-        expandTemplate(entry.defaultSql, {
-          dateFrom,
-          brand,
-          poNumbers: poBatch,
-        }),
-      );
-      expect(renderedBatch).toBe(oracleBatch[legacyKey]);
+        const renderedDate = wrapOpenquery(
+          expandTemplate(entry, { dateFrom, dateTo, brand }),
+        );
+        expect(renderedDate).toBe(oracleDate[legacyKey]);
+
+        const renderedBatch = wrapOpenquery(
+          expandTemplate(entry, {
+            dateFrom,
+            dateTo,
+            brand,
+            docNumbers: soBatch,
+          }),
+        );
+        expect(renderedBatch).toBe(oracleBatch[legacyKey]);
+      }
     }
   });
 
-  it('matches buildReturnQueries({ candidates: true }).old_pos character-for-character when joining ret_old_1..5 with UNION', () => {
+  it('matches buildReturnQueries({ candidates: true }) across all 5 old_sos_1..5 queries and applies dateTo only on old_sos_4..5', () => {
     const dateFrom = '20261007';
-    const brand = '5001';
-    const oracleOldPos = buildReturnQueries(dateFrom, brand, {
-      candidates: true,
-    }).old_pos;
+    const dateTo = '20261028';
 
-    const expandedBranches = SAP_RETURN_OLD_QUERY_KEYS.map((key) => {
-      const entry = SAP_QUERY_CATALOG_BY_KEY[key];
-      expect(entry.allowedPlaceholders).toEqual(['{d}', '{brand}']);
-      expect(entry.defaultSql).toContain('P."DocDate" < \'{d}\'');
-      expect(entry.defaultSql).not.toContain('{date_cond}');
-      return expandTemplate(entry.defaultSql, { dateFrom, brand });
-    });
+    for (const brand of ['5001', '']) {
+      const oracleOld = buildReturnQueries(dateFrom, brand, {
+        candidates: true,
+        dateTo,
+      });
 
-    const combined = wrapOpenquery(expandedBranches.join('\nUNION\n'));
-    expect(combined).toBe(oracleOldPos);
+      for (const key of SAP_RETURN_OLD_QUERY_KEYS) {
+        const entry = SAP_QUERY_CATALOG_BY_KEY[key];
+        expect(entry.allowedPlaceholders).toEqual(['{d}', '{brand_cond}']);
+        expect(entry.defaultSql).toContain('S."DocDate" < \'{d}\'');
+        expect(entry.defaultSql).not.toContain('{date_cond}');
+
+        const rendered = wrapOpenquery(
+          expandTemplate(entry, { dateFrom, dateTo, brand }),
+        );
+        expect(rendered).toBe(oracleOld[key as ReturnCandidatesQueryKey]);
+      }
+
+      expect(oracleOld.old_sos_1).not.toContain('BETWEEN');
+      expect(oracleOld.old_sos_2).not.toContain('BETWEEN');
+      expect(oracleOld.old_sos_3).not.toContain('BETWEEN');
+      expect(oracleOld.old_sos_4).toContain('BETWEEN');
+      expect(oracleOld.old_sos_5).toContain('BETWEEN');
+    }
   });
 });

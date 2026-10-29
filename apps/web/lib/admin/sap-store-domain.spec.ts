@@ -1,8 +1,10 @@
 import type { SapStoreDto } from '@/lib/api/generated/model';
 import {
+  calculateBrandToggleStats,
   calculateStoreMetrics,
   filterStores,
   formatSyncedAt,
+  isStoreQueryEnabled,
 } from './sap-store-domain';
 
 const MOCK_STORES: SapStoreDto[] = [
@@ -44,10 +46,29 @@ describe('sap-store-domain', () => {
       const metrics = calculateStoreMetrics(MOCK_STORES);
       expect(metrics).toEqual({
         total: 3,
+        activeQueryCount: 1,
+        inactiveQueryCount: 2,
         activeSalesCount: 2,
         activeReturnCount: 1,
         sapActiveCount: 2,
         lastSyncedAt: '2026-10-26T03:00:00.000Z',
+      });
+    });
+  });
+
+  describe('calculateBrandToggleStats & isStoreQueryEnabled', () => {
+    it('trả về null khi brandCode = all và tính đúng số kho active trên SAP theo brand', () => {
+      expect(calculateBrandToggleStats(MOCK_STORES, 'all')).toBeNull();
+      expect(isStoreQueryEnabled(MOCK_STORES[0])).toBe(true);
+      expect(isStoreQueryEnabled(MOCK_STORES[1])).toBe(false);
+
+      const stats5001 = calculateBrandToggleStats(MOCK_STORES, '5001');
+      expect(stats5001).toEqual({
+        brandCode: '5001',
+        totalInBrand: 2,
+        sapActiveInBrand: 2,
+        enabledInBrand: 1,
+        isAllSapActiveEnabled: false,
       });
     });
   });

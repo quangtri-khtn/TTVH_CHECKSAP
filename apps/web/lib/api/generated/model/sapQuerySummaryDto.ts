@@ -24,6 +24,7 @@ export interface SapQuerySummaryDto {
   baselineColumns: string[];
   dedupKeys: string[];
   supportsExtraColumns: boolean;
+  autoDateUpper: boolean;
   currentVersionNo: number;
   /** True nếu câu SQL đang chạy khác với bản mặc định gốc v1 */
   isCustomized: boolean;

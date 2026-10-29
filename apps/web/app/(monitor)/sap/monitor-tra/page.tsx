@@ -18,6 +18,8 @@ export default function ReturnMonitorPage() {
   const {
     dateFrom,
     setDateFrom,
+    dateTo,
+    setDateTo,
     brand,
     setBrand,
     selectedCohort,
@@ -62,6 +64,8 @@ export default function ReturnMonitorPage() {
         <ReturnMonitorToolbar
           dateFrom={dateFrom}
           onDateFromChange={setDateFrom}
+          dateTo={dateTo}
+          onDateToChange={setDateTo}
           brand={brand}
           onBrandChange={setBrand}
           onReload={handleReload}

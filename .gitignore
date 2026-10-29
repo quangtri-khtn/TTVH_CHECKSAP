@@ -73,7 +73,7 @@ pnpm-debug.log*
 # OS / editor
 .DS_Store
 *.pem
-
+*.md
 # Prisma-generated client (Prisma 7 custom output) — regenerable from
 # schema.prisma via `pnpm --filter=api prisma:generate`, not committed.
 # Unlike apps/web/lib/api/generated/ (Orval), this one IS gitignored.

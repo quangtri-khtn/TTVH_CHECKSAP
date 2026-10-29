@@ -8,6 +8,7 @@ import {
   useSapStoresGet,
 } from '@/lib/api/generated/sap-stores/sap-stores';
 import {
+  calculateBrandToggleStats,
   calculateStoreMetrics,
   filterStores,
   type SapStoreFilterState,
@@ -35,16 +36,21 @@ export default function AdminSapStoresPage() {
   const allStores = useMemo(() => storesQuery.data?.data.data ?? [], [storesQuery.data]);
 
   const metrics = useMemo(() => calculateStoreMetrics(allStores), [allStores]);
+  const brandToggleStats = useMemo(
+    () => calculateBrandToggleStats(allStores, filters.brandCode),
+    [allStores, filters.brandCode],
+  );
   const filteredStores = useMemo(
     () => filterStores(allStores, filters),
     [allStores, filters],
   );
 
   const {
-    toggleActiveSales,
-    toggleActiveReturn,
+    toggleStoreActive,
+    toggleBrandActive,
     syncStores,
     updatingStoreCode,
+    isBulkUpdatingBrand,
     isSyncing,
     syncDialogOpen,
     setSyncDialogOpen,
@@ -62,10 +68,9 @@ export default function AdminSapStoresPage() {
     () =>
       createSapStoresColumns({
         updatingStoreCode,
-        onToggleSales: toggleActiveSales,
-        onToggleReturn: toggleActiveReturn,
+        onToggleActive: toggleStoreActive,
       }),
-    [updatingStoreCode, toggleActiveSales, toggleActiveReturn],
+    [updatingStoreCode, toggleStoreActive],
   );
 
   return (
@@ -86,11 +91,14 @@ export default function AdminSapStoresPage() {
         <SapStoresToolbar
           brands={brands}
           filters={filters}
+          brandToggleStats={brandToggleStats}
           filteredCount={filteredStores.length}
           totalCount={allStores.length}
           isSyncing={isSyncing}
+          isBulkUpdatingBrand={isBulkUpdatingBrand}
           onChangeFilters={handleChangeFilters}
           onResetFilters={handleResetFilters}
+          onToggleBrandActive={toggleBrandActive}
           onOpenSyncDialog={() => setSyncDialogOpen(true)}
         />
 

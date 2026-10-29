@@ -1,6 +1,13 @@
 import type { SapStoreDto } from '@/lib/api/generated/model';
 
-export type StoreActivityFilter = 'all' | 'active_sales' | 'active_return' | 'inactive_both' | 'sap_inactive';
+export type StoreActivityFilter =
+  | 'all'
+  | 'active'
+  | 'inactive'
+  | 'active_sales'
+  | 'active_return'
+  | 'inactive_both'
+  | 'sap_inactive';
 
 export interface SapStoreFilterState {
   brandCode: string;
@@ -10,13 +17,28 @@ export interface SapStoreFilterState {
 
 export interface SapStoreMetrics {
   total: number;
+  activeQueryCount: number;
+  inactiveQueryCount: number;
   activeSalesCount: number;
   activeReturnCount: number;
   sapActiveCount: number;
   lastSyncedAt: string | null;
 }
 
+export interface SapBrandToggleStats {
+  brandCode: string;
+  totalInBrand: number;
+  sapActiveInBrand: number;
+  enabledInBrand: number;
+  isAllSapActiveEnabled: boolean;
+}
+
+export function isStoreQueryEnabled(store: SapStoreDto): boolean {
+  return Boolean(store.isActiveSales && store.isActiveReturn);
+}
+
 export function calculateStoreMetrics(stores: readonly SapStoreDto[]): SapStoreMetrics {
+  let activeQueryCount = 0;
   let activeSalesCount = 0;
   let activeReturnCount = 0;
   let sapActiveCount = 0;
@@ -24,6 +46,7 @@ export function calculateStoreMetrics(stores: readonly SapStoreDto[]): SapStoreM
   let lastSyncedAt: string | null = null;
 
   for (const store of stores) {
+    if (isStoreQueryEnabled(store)) activeQueryCount++;
     if (store.isActiveSales) activeSalesCount++;
     if (store.isActiveReturn) activeReturnCount++;
     if (!store.sapInactive) sapActiveCount++;
@@ -38,10 +61,45 @@ export function calculateStoreMetrics(stores: readonly SapStoreDto[]): SapStoreM
 
   return {
     total: stores.length,
+    activeQueryCount,
+    inactiveQueryCount: stores.length - activeQueryCount,
     activeSalesCount,
     activeReturnCount,
     sapActiveCount,
     lastSyncedAt,
+  };
+}
+
+export function calculateBrandToggleStats(
+  stores: readonly SapStoreDto[],
+  brandCode: string,
+): SapBrandToggleStats | null {
+  const trimmed = brandCode.trim();
+  if (!trimmed || trimmed === 'all') {
+    return null;
+  }
+
+  let totalInBrand = 0;
+  let sapActiveInBrand = 0;
+  let enabledInBrand = 0;
+
+  for (const store of stores) {
+    if (String(store.brandCode ?? '') !== trimmed) continue;
+    totalInBrand++;
+    if (!store.sapInactive) {
+      sapActiveInBrand++;
+      if (isStoreQueryEnabled(store)) {
+        enabledInBrand++;
+      }
+    }
+  }
+
+  return {
+    brandCode: trimmed,
+    totalInBrand,
+    sapActiveInBrand,
+    enabledInBrand,
+    isAllSapActiveEnabled: sapActiveInBrand > 0 && enabledInBrand === sapActiveInBrand,
   };
 }
 
@@ -58,6 +116,8 @@ export function filterStores(
       return false;
     }
 
+    if (activityFilter === 'active' && !isStoreQueryEnabled(store)) return false;
+    if (activityFilter === 'inactive' && isStoreQueryEnabled(store)) return false;
     if (activityFilter === 'active_sales' && !store.isActiveSales) return false;
     if (activityFilter === 'active_return' && !store.isActiveReturn) return false;
     if (activityFilter === 'inactive_both' && (store.isActiveSales || store.isActiveReturn)) {

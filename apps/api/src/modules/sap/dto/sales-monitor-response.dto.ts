@@ -1,5 +1,5 @@
 // Các DTO phản hồi cho API GET /sap/sales-monitor với 5 khóa ở root của data và kế thừa ApiResponseDto.
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiResponseDto } from '../../../common/dto/api-response.dto';
 import type { SapCellValue } from '../lib/sap-row-normalizer';
 import { SapTableDto } from './sales-monitor-table.dto';
@@ -8,7 +8,10 @@ export class SalesMonitorMetaDto {
   @ApiProperty({ description: 'Từ ngày truy vấn (YYYYMMDD)', example: '20261007' })
   dateFrom!: string;
 
-  @ApiProperty({ description: 'Mã thương hiệu truy vấn', example: '5001' })
+  @ApiPropertyOptional({ description: 'Đến ngày truy vấn (YYYYMMDD)', example: '20261028' })
+  dateTo?: string;
+
+  @ApiProperty({ description: 'Mã thương hiệu truy vấn (chuỗi rỗng = mọi brand)', example: '5001' })
   brand!: string;
 
   @ApiProperty({ description: 'Ngày hiện tại theo múi giờ Việt Nam (YYYY-MM-DD)', example: '2026-10-21' })

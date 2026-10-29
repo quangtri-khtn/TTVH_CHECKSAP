@@ -24,6 +24,7 @@ interface InMemoryDef {
   baselineColumns: string[];
   dedupKeys: string[];
   supportsExtraColumns: boolean;
+  autoDateUpper: boolean;
   defaultSql: string;
   currentVersionNo: number;
   lastTestedSqlHash: string | null;
@@ -136,6 +137,7 @@ function createFakePrisma(): FakePrisma {
           baselineColumns: (data.baselineColumns as string[]) ?? [],
           dedupKeys: (data.dedupKeys as string[]) ?? [],
           supportsExtraColumns: Boolean(data.supportsExtraColumns),
+          autoDateUpper: data.autoDateUpper === undefined ? true : Boolean(data.autoDateUpper),
           defaultSql: String(data.defaultSql),
           currentVersionNo: Number(data.currentVersionNo ?? 1),
           lastTestedSqlHash: null,
@@ -300,13 +302,14 @@ describe('SapQueryConfigService', () => {
 
     expect(Object.keys(salesList)).toHaveLength(8);
     expect(salesChain.po).toBe(salesChain.chain_po);
+    expect(retMain.so).toBe(retMain.ret_so);
     expect(retMain.po).toBe(retMain.ret_po);
     expect(Object.keys(retOld)).toEqual([
-      'ret_old_1',
-      'ret_old_2',
-      'ret_old_3',
-      'ret_old_4',
-      'ret_old_5',
+      'old_sos_1',
+      'old_sos_2',
+      'old_sos_3',
+      'old_sos_4',
+      'old_sos_5',
     ]);
   });
 
@@ -487,5 +490,48 @@ describe('SapQueryConfigService', () => {
     await expect(
       service.findOne('invalid_key' as SapQueryKey),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('filters review preview rows by activeStoreCodes and returns empty when activeStoreCodes is empty', async () => {
+    const storeService = {
+      getActiveStoreCodes: jest
+        .fn()
+        .mockResolvedValueOnce(new Set(['MC001']))
+        .mockResolvedValueOnce(new Set<string>()),
+    };
+    const serviceWithStores = new SapQueryConfigService(
+      prisma as never,
+      gateway as never,
+      storeService as never,
+    );
+    const t1Entry = SAP_QUERY_CATALOG_BY_KEY.t1;
+    gateway.run.mockResolvedValue({
+      columns: [...t1Entry.baselineColumns],
+      rows: [
+        ['MC001', 1001, '2026-10-07', '2026-10-07', 'O', 2, 'Chua co SO'],
+        ['MC999', 1002, '2026-10-07', '2026-10-07', 'O', 3, 'Chua co SO'],
+      ],
+    });
+
+    const filteredRes = await serviceWithStores.review('t1', {
+      sqlText: t1Entry.defaultSql,
+      dateFrom: '20261007',
+      brand: '5001',
+    });
+    expect(storeService.getActiveStoreCodes).toHaveBeenCalledWith(
+      '5001',
+      'sales',
+    );
+    expect(filteredRes.rowCount).toBe(1);
+    expect(filteredRes.previewTable.rows).toHaveLength(1);
+    expect(filteredRes.previewTable.rows[0]?.[0]).toBe('MC001');
+
+    const emptyRes = await serviceWithStores.review('t1', {
+      sqlText: t1Entry.defaultSql,
+      dateFrom: '20261007',
+      brand: '5003',
+    });
+    expect(emptyRes.rowCount).toBe(0);
+    expect(emptyRes.previewTable.rows).toHaveLength(0);
   });
 });

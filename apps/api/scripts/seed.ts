@@ -19,7 +19,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { Role } from '../src/generated/prisma/enums';
 import { ARGON2_OPTIONS } from '../src/modules/auth/argon2-options.constant';
-import { RETURN_PILOT_STORES } from '../src/modules/sap/lib/sap-constants';
+import { DEFAULT_ACTIVE_STORES } from '../src/modules/sap/lib/sap-constants';
 import { SAP_QUERY_CATALOG } from '../src/modules/sap/queries/sap-query-catalog';
 
 const SAP_BRANDS_SEED = [
@@ -87,12 +87,16 @@ async function seed() {
   }
   console.log(`[seed] SAP brands upserted: ${SAP_BRANDS_SEED.length}`);
 
-  for (const storeCode of RETURN_PILOT_STORES) {
+  await prisma.sapStore.updateMany({
+    where: { code: { notIn: [...DEFAULT_ACTIVE_STORES] } },
+    data: { isActiveSales: false, isActiveReturn: false },
+  });
+
+  for (const storeCode of DEFAULT_ACTIVE_STORES) {
     const brandCode = resolvePilotBrandCode(storeCode);
     await prisma.sapStore.upsert({
       where: { code: storeCode },
       update: {
-        brandCode,
         isActiveSales: true,
         isActiveReturn: true,
       },
@@ -106,13 +110,10 @@ async function seed() {
       },
     });
   }
-  const brand5001Res = await prisma.sapStore.updateMany({
-    where: { brandCode: '5001' },
-    data: { isActiveSales: true, isActiveReturn: true },
-  });
-  console.log(`[seed] SAP brand 5001 stores activated: ${brand5001Res.count}`);
-  console.log(`[seed] SAP pilot stores upserted: ${RETURN_PILOT_STORES.length}`);
-
+  console.log(`[seed] SAP default active stores (Appendix A) configured: ${DEFAULT_ACTIVE_STORES.length}`);
+  await prisma.sapQueryAudit.deleteMany({});
+  await prisma.sapQueryVersion.deleteMany({});
+  await prisma.sapQueryDef.deleteMany({});
   for (const entry of SAP_QUERY_CATALOG) {
     const normalizedSql = entry.defaultSql.replace(/\r\n/g, '\n').trim();
     const sqlHash = createHash('sha256').update(normalizedSql).digest('hex');
@@ -131,6 +132,7 @@ async function seed() {
         baselineColumns: [...entry.baselineColumns],
         dedupKeys: [...entry.dedupKeys],
         supportsExtraColumns: entry.supportsExtraColumns,
+        autoDateUpper: entry.autoDateUpper,
         defaultSql: entry.defaultSql,
       },
       create: {
@@ -146,6 +148,7 @@ async function seed() {
         baselineColumns: [...entry.baselineColumns],
         dedupKeys: [...entry.dedupKeys],
         supportsExtraColumns: entry.supportsExtraColumns,
+        autoDateUpper: entry.autoDateUpper,
         defaultSql: entry.defaultSql,
         currentVersionNo: 1,
       },
@@ -158,7 +161,10 @@ async function seed() {
           versionNo: 1,
         },
       },
-      update: {},
+      update: {
+        sqlText: entry.defaultSql,
+        sqlHash,
+      },
       create: {
         queryKey: entry.key,
         versionNo: 1,

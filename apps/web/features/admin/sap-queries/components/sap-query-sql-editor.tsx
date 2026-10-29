@@ -93,8 +93,14 @@ export function SapQuerySqlEditor({
   );
 
   const handleCopySample = () => {
-    const expanded = buildSampleExecutableSql(currentSql, sampleDate, sampleBrand);
-    onCopyText(expanded, `SQL đã điền mẫu (${sampleDate} · Brand ${sampleBrand})`);
+    const expanded = buildSampleExecutableSql(
+      currentSql,
+      sampleDate,
+      sampleBrand,
+      '',
+      detail.autoDateUpper,
+    );
+    onCopyText(expanded, `SQL đã điền mẫu (${sampleDate} · Brand ${sampleBrand || 'Tất cả'})`);
   };
 
   return (

@@ -20,6 +20,10 @@ import {
   groupQueriesByFlowAndStage,
   type SapQueryFlowTab,
 } from '@/lib/admin/sap-query-domain';
+import {
+  SAP_QUERY_TAG_CATALOG,
+  isValidSapQueryKey,
+} from '@/lib/sap-monitor/sap-query-tag-map';
 import { useSapQueryActions } from '@/features/admin/sap-queries/hooks/use-sap-query-actions';
 import { SapQueriesSidebarList } from '@/features/admin/sap-queries/components/sap-queries-sidebar-list';
 import { SapQueryPassportHeader } from '@/features/admin/sap-queries/components/sap-query-passport-header';
@@ -29,15 +33,33 @@ import { SapQueryHistorySheet } from '@/features/admin/sap-queries/components/sa
 
 function SapQueriesStudioContent() {
   const searchParams = useSearchParams();
-  const initialFlow: SapQueryFlowTab =
-    searchParams.get('flow') === 'tra' ? 'tra' : 'ban';
+  const keyParam = searchParams.get('key');
+  const flowParam = searchParams.get('flow');
+  const initialKeyMeta = isValidSapQueryKey(keyParam)
+    ? SAP_QUERY_TAG_CATALOG[keyParam]
+    : null;
+  const initialFlow: SapQueryFlowTab = initialKeyMeta
+    ? initialKeyMeta.flow
+    : flowParam === 'tra'
+      ? 'tra'
+      : 'ban';
 
   const [activeFlow, setActiveFlow] = useState<SapQueryFlowTab>(initialFlow);
   const [search, setSearch] = useState('');
   const [selectedKey, setSelectedKey] = useState<string>(
-    initialFlow === 'tra' ? 'ret_po' : 'funnel',
+    initialKeyMeta ? initialKeyMeta.key : initialFlow === 'tra' ? 'ret_po' : 'funnel',
   );
   const [currentSql, setCurrentSql] = useState('');
+
+  useEffect(() => {
+    if (isValidSapQueryKey(keyParam)) {
+      const meta = SAP_QUERY_TAG_CATALOG[keyParam];
+      setActiveFlow(meta.flow);
+      setSelectedKey(meta.key);
+    } else if (flowParam === 'ban' || flowParam === 'tra') {
+      setActiveFlow(flowParam);
+    }
+  }, [keyParam, flowParam]);
   const [sampleDate, setSampleDate] = useState(DEFAULT_SAMPLE_DATE);
   const [sampleBrand, setSampleBrand] = useState(DEFAULT_SAMPLE_BRAND);
   const [changeNote, setChangeNote] = useState('');

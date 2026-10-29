@@ -49,14 +49,26 @@ export class SapSalesMonitorExcelService {
     query: GetSalesMonitorQueryDto,
   ): Promise<{ buffer: Buffer; filename: string }> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo;
     const brand = query.brand ?? MONITOR_DEFAULT_BRAND;
-    const data = await this.salesMonitorService.getSalesMonitor({ dateFrom, brand, refresh: false });
+    const data = await this.salesMonitorService.getSalesMonitor({
+      dateFrom,
+      dateTo,
+      brand,
+      refresh: false,
+    });
 
     const { workbook, finishWorkbook } = createStreamingWorkbook();
     const { fileTimestamp, displayTimestamp } = formatVietnamDateTime();
 
-    this.writeOverviewSheet(workbook, data, dateFrom, brand, displayTimestamp);
-
+    this.writeOverviewSheet(
+      workbook,
+      data,
+      dateFrom,
+      dateTo ?? data.meta.dateTo,
+      brand,
+      displayTimestamp,
+    );
     writeStandardWorksheet(
       workbook,
       'Chi tiet theo PO',
@@ -95,12 +107,17 @@ export class SapSalesMonitorExcelService {
     query: ExportSalesMonitorGridQueryDto,
   ): Promise<{ buffer: Buffer; filename: string }> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo;
     const brand = query.brand ?? MONITOR_DEFAULT_BRAND;
     const cohort: SalesMonitorExportCohort = query.cohort ?? 'moi';
     const sourceType = query.sourceType ?? 'view';
     const sourceKey = query.sourceKey ?? 'overview';
-    const data = await this.salesMonitorService.getSalesMonitor({ dateFrom, brand, refresh: false });
-
+    const data = await this.salesMonitorService.getSalesMonitor({
+      dateFrom,
+      dateTo,
+      brand,
+      refresh: false,
+    });
     const { columns, rows } = this.extractGridTable(
       data,
       sourceType,
@@ -124,6 +141,7 @@ export class SapSalesMonitorExcelService {
     workbook: StreamingWorkbookHandle['workbook'],
     data: SalesMonitorDataDto,
     dateFrom: string,
+    dateTo: string | undefined,
     brand: string,
     displayTimestamp: string,
   ): void {
@@ -144,7 +162,15 @@ export class SapSalesMonitorExcelService {
         'Từ ngày',
         `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`,
       ],
-      ['Brand (U_Brand)', brand],
+      ...(dateTo
+        ? [
+            [
+              'Đến ngày',
+              `${dateTo.slice(6, 8)}/${dateTo.slice(4, 6)}/${dateTo.slice(0, 4)}`,
+            ] as [string, string],
+          ]
+        : []),
+      ['Brand (U_Brand)', brand || 'Tất cả thương hiệu'],
       ['Xuất lúc', displayTimestamp],
       ['', ''],
       ['Phễu chuyển đổi từng bước (đơn vị ghi ở cột Đơn vị)', ''],

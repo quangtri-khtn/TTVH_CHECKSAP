@@ -17,8 +17,9 @@ import {
   type SalesDocStatusKey,
   formatSapCell,
 } from '@/lib/sap-monitor/sales-monitor-domain';
+import { SALES_CHAIN_QUERY_KEYS } from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface SalesDocStatusTableProps {
   docStatusCounts: SalesDocStatusCountsDto | undefined;
   poCount: number | undefined;
@@ -36,9 +37,12 @@ export function SalesDocStatusTable({
 }: SalesDocStatusTableProps) {
   return (
     <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs animate-in fade-in slide-in-from-top-2 duration-200">
-      <h2 className="text-xs font-semibold text-foreground">
-        Chứng từ treo theo từng bước – nhấp một dòng để xem danh sách bên dưới
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold text-foreground">
+          Chứng từ treo theo từng bước – nhấp một dòng để xem danh sách bên dưới
+        </h2>
+        <SapQueryTagBar label="SQL:" queryKeys={SALES_CHAIN_QUERY_KEYS} />
+      </div>
 
       <div className="overflow-hidden rounded-md border">
         <Table className="text-xs">

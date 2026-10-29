@@ -92,7 +92,7 @@ model SapStore {
 }
 
 model SapQueryDef {
-  key                  String            @id /// Khóa định danh chuẩn (1 trong 25 khóa: funnel, t1..ap, chain_po..chain_ap, ret_po..ret_whs, ret_old_1..ret_old_5)
+  key                  String            @id /// Khóa định danh chuẩn (1 trong 25 khóa: funnel, t1..ap, chain_po..chain_ap, ret_so..ret_whs, old_sos_1..old_sos_5)
   flow                 String            /// 'ban' | 'tra'
   stage                String            /// 'list' | 'chain' | 'main' | 'old_discovery'
   sortOrder            Int               /// Thứ tự 1..25 theo đúng tài liệu
@@ -104,6 +104,7 @@ model SapQueryDef {
   baselineColumns      String[]          @default([]) /// Toàn bộ cột trả về của câu gốc v1 (kể cả cột ẩn như PO DocEntry, Kho PO min/max)
   dedupKeys            String[]          @default([]) /// Khóa khử trùng theo đặc tả 12.5
   supportsExtraColumns Boolean           @default(true)
+  autoDateUpper        Boolean           @default(true) /// Tự đổi "DocDate" >= '{d}' thành BETWEEN '{d}' AND '{date_to}'
   defaultSql           String            /// Câu Full SQL gốc (Seed v1) dùng để đối chiếu & khôi phục
   currentVersionNo     Int               @default(1)
   lastTestedSqlHash    String?           /// SHA-256 của câu SQL đã chuẩn hóa vượt qua Review & Validate gần nhất

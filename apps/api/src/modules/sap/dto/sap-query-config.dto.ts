@@ -83,6 +83,8 @@ export class SapQuerySummaryDto {
   @ApiProperty({ example: true })
   supportsExtraColumns!: boolean;
 
+  @ApiProperty({ example: true })
+  autoDateUpper!: boolean;
   @ApiProperty({ example: 1 })
   currentVersionNo!: number;
 
@@ -229,15 +231,26 @@ export class ReviewSapQueryRequestDto {
   dateFrom?: string = MONITOR_DEFAULT_DATE;
 
   @ApiPropertyOptional({
-    default: MONITOR_DEFAULT_BRAND,
-    example: '5001',
-    description: 'Mã thương hiệu chạy thử (1-10 ký tự chữ và số ASCII)',
+    example: '20261029',
+    description: 'Đến ngày chạy thử theo định dạng YYYYMMDD (tùy chọn)',
   })
   @IsOptional()
   @IsString()
-  @Matches(/^[A-Za-z0-9]{1,10}$/, {
+  @Matches(/^\d{8}$/, {
+    message: 'Ngày truy vấn SAP không hợp lệ (yêu cầu định dạng YYYYMMDD)',
+  })
+  dateTo?: string;
+
+  @ApiPropertyOptional({
+    default: MONITOR_DEFAULT_BRAND,
+    example: '5001',
+    description: 'Mã thương hiệu chạy thử (1-10 ký tự chữ và số ASCII, hoặc để trống = mọi brand)',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9]{0,10}$/, {
     message:
-      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII)',
+      'Mã thương hiệu (brand) truy vấn SAP không hợp lệ (chỉ chấp nhận 1–10 ký tự chữ và số ASCII, hoặc để trống = mọi brand)',
   })
   brand?: string = MONITOR_DEFAULT_BRAND;
 }

@@ -20,6 +20,7 @@ import {
   type SalesDocStatusKey,
   type SalesViewKey,
   getSalesMonitorErrorMessage,
+  getTodaySapDate,
   getYesterdaySapDate,
   resolveActiveGridData,
 } from '@/lib/sap-monitor/sales-monitor-domain';
@@ -31,6 +32,7 @@ export interface UseSalesMonitorActionsOptions {
 export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorActionsOptions = {}) {
   const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState<string>(() => getYesterdaySapDate());
+  const [dateTo, setDateTo] = useState<string>(() => getTodaySapDate());
   const [brand, setBrand] = useState<string>(DEFAULT_SALES_BRAND);
 
   const [selectedCohort, setSelectedCohort] = useState<CohortFilter>('moi');
@@ -42,8 +44,11 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
   const [isDetailExporting, setIsDetailExporting] = useState<boolean>(false);
   const [isGridExporting, setIsGridExporting] = useState<boolean>(false);
 
-  const queryParams = useMemo(() => ({ dateFrom, brand }), [dateFrom, brand]);
-
+  const apiBrand = brand === 'ALL' ? '' : brand;
+  const queryParams = useMemo(
+    () => ({ dateFrom, dateTo, brand: apiBrand }),
+    [dateFrom, dateTo, apiBrand],
+  );
   const query = useSapSalesMonitorGetData(queryParams, {
     query: {
       enabled,
@@ -62,12 +67,13 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
   const handleReload = useCallback(async () => {
     setIsReloading(true);
     const toastId = toast.loading(
-      `Đang tải lại dữ liệu mới nhất từ SAP HANA (${dateFrom} · Brand ${brand})...`,
+      `Đang tải lại dữ liệu mới nhất từ SAP HANA (${dateFrom} -> ${dateTo} · Brand ${brand || 'Tất cả'})...`,
     );
     try {
       const freshResponse = await sapSalesMonitorGetData({
         dateFrom,
-        brand,
+        dateTo,
+        brand: apiBrand,
         refresh: true,
       });
       queryClient.setQueryData(
@@ -80,8 +86,7 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     } finally {
       setIsReloading(false);
     }
-  }, [brand, dateFrom, queryClient, queryParams]);
-
+  }, [apiBrand, brand, dateFrom, dateTo, queryClient, queryParams]);
   const handleSelectFunnelStep = useCallback((stepIndex: number) => {
     setDrilldownSource({ type: 'funnel', stepIndex });
   }, []);
@@ -116,14 +121,14 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     setIsDetailExporting(true);
     const toastId = toast.loading('Đang xuất file Excel chi tiết (11 sheets)...');
     try {
-      await downloadSalesMonitorDetailExcel({ dateFrom, brand });
+      await downloadSalesMonitorDetailExcel({ dateFrom, dateTo, brand: apiBrand });
       toast.success('Đã xuất file Excel chi tiết thành công.', { id: toastId });
     } catch (err) {
       toast.error(getSalesMonitorErrorMessage(err), { id: toastId });
     } finally {
       setIsDetailExporting(false);
     }
-  }, [brand, dateFrom]);
+  }, [apiBrand, dateFrom, dateTo]);
 
   const handleExportGrid = useCallback(async () => {
     if (activeGrid.rows.length === 0) {
@@ -136,7 +141,8 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     try {
       await downloadSalesMonitorGridExcel({
         dateFrom,
-        brand,
+        dateTo,
+        brand: apiBrand,
         cohort: selectedCohort,
         sourceType: activeGrid.exportSourceType,
         sourceKey: activeGrid.exportSourceKey,
@@ -151,14 +157,17 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     activeGrid.exportSourceKey,
     activeGrid.exportSourceType,
     activeGrid.rows.length,
-    brand,
+    apiBrand,
     dateFrom,
+    dateTo,
     selectedCohort,
   ]);
 
   return {
     dateFrom,
     setDateFrom,
+    dateTo,
+    setDateTo,
     brand,
     setBrand,
     selectedCohort,

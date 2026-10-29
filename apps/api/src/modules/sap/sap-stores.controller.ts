@@ -5,6 +5,10 @@ import {
   RequirePermissions,
 } from '../access-control/decorators/require-permissions.decorator';
 import { PERMISSIONS } from '../access-control/permission-catalog';
+import {
+  BulkUpdateSapStoresByBrandDto,
+  BulkUpdateSapStoresByBrandResponseDto,
+} from './dto/bulk-update-sap-stores-by-brand.dto';
 import { GetSapStoresQueryDto } from './dto/get-sap-stores-query.dto';
 import { SapBrandListResponseDto } from './dto/sap-brand.dto';
 import { SapStoreEnvelopeDto, SapStoreListResponseDto } from './dto/sap-store.dto';
@@ -42,6 +46,17 @@ export class SapStoresController {
   @ApiOkResponse({ type: SapStoreListResponseDto })
   async findAllStores(@Query() query: GetSapStoresQueryDto) {
     return this.storeService.findAll(query);
+  }
+
+  @Patch('stores/bulk-brand')
+  @RequirePermissions(PERMISSIONS.SAP_STORE_MANAGE)
+  @ApiOperation({
+    summary: 'Bật/tắt hàng loạt cửa hàng theo thương hiệu (mở theo trạng thái hoạt động trên SAP)',
+    operationId: 'sapStoresBulkUpdateByBrand',
+  })
+  @ApiOkResponse({ type: BulkUpdateSapStoresByBrandResponseDto })
+  async bulkUpdateStoresByBrand(@Body() dto: BulkUpdateSapStoresByBrandDto) {
+    return this.storeService.bulkUpdateByBrand(dto);
   }
 
   @Patch('stores/:code')

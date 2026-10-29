@@ -12,6 +12,7 @@ CREATE TABLE "sap_query_defs" (
     "baselineColumns" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "dedupKeys" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "supportsExtraColumns" BOOLEAN NOT NULL DEFAULT true,
+    "autoDateUpper" BOOLEAN NOT NULL DEFAULT true,
     "defaultSql" TEXT NOT NULL,
     "currentVersionNo" INTEGER NOT NULL DEFAULT 1,
     "lastTestedSqlHash" TEXT,

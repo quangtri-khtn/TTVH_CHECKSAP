@@ -1,5 +1,9 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import type {
+  BulkUpdateSapStoresByBrandDto,
+  BulkUpdateSapStoresByBrandResultDto,
+} from '../dto/bulk-update-sap-stores-by-brand.dto';
 import type { GetSapStoresQueryDto } from '../dto/get-sap-stores-query.dto';
 import type { SapStoreDto } from '../dto/sap-store.dto';
 import type { SyncSapStoresResultDto } from '../dto/sync-sap-stores.dto';
@@ -121,6 +125,47 @@ export class SapStoreService {
   }
 
   /**
+   * Đóng/mở hàng loạt các cửa hàng thuộc 1 thương hiệu (`brandCode`) mà không ảnh hưởng tới thương hiệu khác.
+   * Khi `isActive = true`: bật (`isActiveSales = true, isActiveReturn = true`) cho các kho đang hoạt động trên SAP (`sapInactive = false`),
+   * đồng thời tắt các kho đã ngưng trên SAP (`sapInactive = true`) của thương hiệu đó.
+   * Khi `isActive = false`: tắt toàn bộ các kho thuộc thương hiệu đó.
+   */
+  async bulkUpdateByBrand(
+    dto: BulkUpdateSapStoresByBrandDto,
+  ): Promise<BulkUpdateSapStoresByBrandResultDto> {
+    const brandCode = dto.brandCode.trim();
+    if (dto.isActive) {
+      const [activeRes] = await this.prisma.$transaction([
+        this.prisma.sapStore.updateMany({
+          where: { brandCode, sapInactive: false },
+          data: { isActiveSales: true, isActiveReturn: true },
+        }),
+        this.prisma.sapStore.updateMany({
+          where: { brandCode, sapInactive: true },
+          data: { isActiveSales: false, isActiveReturn: false },
+        }),
+      ]);
+      this.configEpoch++;
+      return {
+        brandCode,
+        isActive: true,
+        updatedCount: activeRes.count,
+      };
+    }
+
+    const offRes = await this.prisma.sapStore.updateMany({
+      where: { brandCode },
+      data: { isActiveSales: false, isActiveReturn: false },
+    });
+    this.configEpoch++;
+    return {
+      brandCode,
+      isActive: false,
+      updatedCount: offRes.count,
+    };
+  }
+
+  /**
    * Đồng bộ danh mục cửa hàng từ `maycha_live.OWHS` qua FifoLock.
    * QUY TẮC BẤT BIẾN: Chỉ cập nhật `name`, `brandCode`, `sapInactive`, `syncedAt`;
    * TUYỆT ĐỐI KHÔNG ghi đè `isActiveSales` và `isActiveReturn` của các kho đã tồn tại.
@@ -229,41 +274,12 @@ export class SapStoreService {
     brandCode: string,
     type: 'sales' | 'return',
   ): Promise<Set<string>> {
-    if (brandCode.toUpperCase() === 'ALL') {
-      const allStores = await this.prisma.sapStore.findMany({
-        select: {
-          code: true,
-          brandCode: true,
-          isActiveSales: true,
-          isActiveReturn: true,
-        },
+    if (!brandCode || brandCode.toUpperCase() === 'ALL') {
+      const activeStores = await this.prisma.sapStore.findMany({
+        where: type === 'sales' ? { isActiveSales: true } : { isActiveReturn: true },
+        select: { code: true },
       });
-      const byBrand = new Map<
-        string,
-        { allCodes: string[]; activeCodes: string[] }
-      >();
-      for (const s of allStores) {
-        const key = s.brandCode ?? '__NONE__';
-        let bucket = byBrand.get(key);
-        if (!bucket) {
-          bucket = { allCodes: [], activeCodes: [] };
-          byBrand.set(key, bucket);
-        }
-        bucket.allCodes.push(s.code);
-        const isActive = type === 'sales' ? s.isActiveSales : s.isActiveReturn;
-        if (isActive) {
-          bucket.activeCodes.push(s.code);
-        }
-      }
-      const result = new Set<string>();
-      for (const bucket of byBrand.values()) {
-        const chosen =
-          bucket.activeCodes.length > 0 ? bucket.activeCodes : bucket.allCodes;
-        for (const code of chosen) {
-          result.add(code);
-        }
-      }
-      return result;
+      return new Set(activeStores.map((s) => s.code));
     }
 
     const stores = await this.prisma.sapStore.findMany({

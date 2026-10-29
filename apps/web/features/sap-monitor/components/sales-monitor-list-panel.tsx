@@ -24,9 +24,10 @@ import {
   formatSapCell,
   getViewRowCount,
 } from '@/lib/sap-monitor/sales-monitor-domain';
+import { getSalesListViewQueryKeys } from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
 import { SapDataGrid } from './sap-data-grid';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface SalesMonitorListPanelProps {
   lists: SalesMonitorListsDto | undefined;
   selectedViewKey: SalesViewKey;
@@ -37,6 +38,7 @@ export interface SalesMonitorListPanelProps {
   isLoading: boolean;
   isGridExporting: boolean;
   onExportGrid: () => void;
+  isDrilldown?: boolean;
 }
 
 export function SalesMonitorListPanel({
@@ -49,6 +51,7 @@ export function SalesMonitorListPanel({
   isLoading,
   isGridExporting,
   onExportGrid,
+  isDrilldown = false,
 }: SalesMonitorListPanelProps) {
   const [search, setSearch] = useState('');
 
@@ -157,6 +160,10 @@ export function SalesMonitorListPanel({
           {displayRowCount.toLocaleString('en-US')} dòng
         </Badge>
 
+        <SapQueryTagBar
+          label="SQL:"
+          queryKeys={getSalesListViewQueryKeys(selectedViewKey, isDrilldown)}
+        />
         <div className="ml-auto">
           <Button
             type="button"

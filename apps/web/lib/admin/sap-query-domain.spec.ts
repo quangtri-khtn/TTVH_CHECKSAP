@@ -29,6 +29,7 @@ const MOCK_QUERIES: SapQuerySummaryDto[] = [
     baselineColumns: ['Store', 'Ten cua hang', 'PO', 'SO'],
     dedupKeys: ['Store'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     currentVersionNo: 1,
     isCustomized: false,
     activeSqlHash: 'h1',
@@ -48,6 +49,7 @@ const MOCK_QUERIES: SapQuerySummaryDto[] = [
     baselineColumns: ['PO DocEntry', 'PO Number', 'DocDate'],
     dedupKeys: ['PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     currentVersionNo: 2,
     isCustomized: true,
     activeSqlHash: 'h2',
@@ -55,18 +57,19 @@ const MOCK_QUERIES: SapQuerySummaryDto[] = [
     updatedAt: '2026-10-29T01:00:00.000Z',
   },
   {
-    key: 'ret_po',
+    key: 'ret_so',
     flow: 'tra',
     stage: 'main',
     sortOrder: 14,
-    title: '#14 · Đơn PO Trả hàng Gốc',
-    description: 'Lấy danh sách PO trả hàng',
-    impactBadges: ['Bảng Chi tiết Chuỗi Trả'],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number', 'Kho PO min', 'Kho PO max'],
-    dedupKeys: ['PO Number'],
+    title: '#14 · Đầu mục SO Trả hàng Gốc',
+    description: 'Lấy danh sách SO trả hàng',
+    impactBadges: ['Bảng Chi tiết theo SO'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number', 'SO Canceled', 'Kho SO min', 'Kho SO max'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     currentVersionNo: 1,
     isCustomized: false,
     activeSqlHash: 'h3',
@@ -74,18 +77,19 @@ const MOCK_QUERIES: SapQuerySummaryDto[] = [
     updatedAt: '2026-10-29T00:00:00.000Z',
   },
   {
-    key: 'ret_old_1',
+    key: 'old_sos_1',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 21,
-    title: '#21 · Tìm PO Cũ — Nhánh 1 (SO Trả trong kỳ)',
-    description: 'Tìm PO trả phát sinh trước kỳ nhưng có SO trả trong kỳ',
+    title: '#21 · Tìm SO Trả Cũ — Nhánh 1 (PO KBMĐ mới tạo trong kỳ)',
+    description: 'Tìm SO trả phát sinh trước kỳ nhưng có PO KBMĐ tạo trong kỳ',
     impactBadges: ['Nhóm Cũ Luồng Trả'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: [],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
+    autoDateUpper: false,
     currentVersionNo: 3,
     isCustomized: true,
     activeSqlHash: 'h4',
@@ -122,31 +126,34 @@ describe('sap-query-domain', () => {
       const traFiltered = groupQueriesByFlowAndStage(MOCK_QUERIES, 'tra', '#21');
       expect(traFiltered).toHaveLength(1);
       expect(traFiltered[0]?.groupCode).toBe('2B');
-      expect(traFiltered[0]?.items.map((i) => i.key)).toEqual(['ret_old_1']);
+      expect(traFiltered[0]?.items.map((i) => i.key)).toEqual(['old_sos_1']);
       expect(formatQueryOrderBadge(1)).toBe('#01');
     });
   });
 
   describe('buildSampleExecutableSql', () => {
-    it('thay thế đúng 5 biến runtime {d}, {brand}, {br}, {po_filter}, {date_cond} và giữ nguyên dấu < cho ret_old_1..5', () => {
+    it('thay thế đúng 5 biến runtime {d}, {brand_cond}, {br}, {po_filter}, {date_cond}, hỗ trợ brand rỗng và BETWEEN dateTo', () => {
       const salesSql = 'SELECT * FROM maycha_live.OPOR P {br} WHERE {po_filter} AND P."DocDate" >= \'{d}\'';
-      const expandedSales = buildSampleExecutableSql(salesSql, '20261007', '5001');
+      const expandedSales = buildSampleExecutableSql(salesSql, '20261007', '5001', '20261028');
       expect(expandedSales).toContain(
         'JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = \'5001\'',
       );
       expect(expandedSales).toContain(
-        'P."CardCode" = \'309019\' AND P."CANCELED" = \'N\' AND P."DocDate" >= \'20261007\'',
+        'P."CardCode" = \'309019\' AND P."CANCELED" = \'N\' AND P."DocDate" BETWEEN \'20261007\' AND \'20261028\'',
       );
 
-      const retMainSql = 'SELECT * FROM maycha_live.OPOR P WHERE W."U_Brand" = \'{brand}\' AND {date_cond}';
+      const retMainSql = 'SELECT * FROM maycha_live.ORDR S WHERE {date_cond}{brand_cond}';
       expect(buildSampleExecutableSql(retMainSql, '20261007', '5001')).toBe(
-        'SELECT * FROM maycha_live.OPOR P WHERE W."U_Brand" = \'5001\' AND P."DocDate" >= \'20261007\'',
+        'SELECT * FROM maycha_live.ORDR S WHERE S."DocDate" >= \'20261007\' AND W."U_Brand" = \'5001\'',
+      );
+      expect(buildSampleExecutableSql(retMainSql, '20261007', '')).toBe(
+        'SELECT * FROM maycha_live.ORDR S WHERE S."DocDate" >= \'20261007\'',
       );
 
       const retOldSql =
-        'SELECT DISTINCT P."DocNum" AS "PO Number" FROM maycha_live.OPOR P WHERE W."U_Brand" = \'{brand}\' AND P."DocDate" < \'{d}\' AND S."DocDate" >= \'{d}\'';
-      expect(buildSampleExecutableSql(retOldSql, '20261007', '5001')).toBe(
-        'SELECT DISTINCT P."DocNum" AS "PO Number" FROM maycha_live.OPOR P WHERE W."U_Brand" = \'5001\' AND P."DocDate" < \'20261007\' AND S."DocDate" >= \'20261007\'',
+        'SELECT DISTINCT S."DocNum" AS "SO Number" FROM maycha_live.ORDR S WHERE S."DocDate" < \'{d}\'{brand_cond} AND P."CreateDate" >= \'{d}\'';
+      expect(buildSampleExecutableSql(retOldSql, '20261007', '5001', '20261028', false)).toBe(
+        'SELECT DISTINCT S."DocNum" AS "SO Number" FROM maycha_live.ORDR S WHERE S."DocDate" < \'20261007\' AND W."U_Brand" = \'5001\' AND P."CreateDate" >= \'20261007\'',
       );
     });
   });

@@ -23,7 +23,7 @@ import {
   todayInVietnam,
 } from '../lib/sales-monitor';
 import { MONITOR_DEFAULT_BRAND, MONITOR_DEFAULT_DATE } from '../lib/sap-constants';
-import { assertSapBrand, assertSapDate } from '../lib/sap-query-params';
+import { assertSapBrand, assertSapDateRange } from '../lib/sap-query-params';
 import type { SapQueryResult } from '../lib/sap-row-normalizer';
 import type { ReturnListQueryKey } from '../queries/return-monitor-queries';
 import { SAP_RETURN_OLD_QUERY_KEYS } from '../queries/sap-query-catalog';
@@ -33,11 +33,11 @@ import { SapStoreService } from './sap-store.service';
 
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 20;
-const OLD_PO_CHUNK_SIZE = 300;
+const OLD_SO_CHUNK_SIZE = 150;
 
 const RETURN_LIST_ORDER: readonly ReturnListQueryKey[] = [
-  'po',
   'so',
+  'po',
   'do',
   'ar',
   'grpo',
@@ -45,9 +45,9 @@ const RETURN_LIST_ORDER: readonly ReturnListQueryKey[] = [
   'whs',
 ];
 
-const RETURN_OLD_PO_ORDER: readonly Exclude<ReturnListQueryKey, 'whs'>[] = [
-  'po',
+const RETURN_OLD_SO_ORDER: readonly Exclude<ReturnListQueryKey, 'whs'>[] = [
   'so',
+  'po',
   'do',
   'ar',
   'grpo',
@@ -71,7 +71,7 @@ function assertBatchColumnsMatch(
     chunkColumns.length !== baseColumns.length ||
     chunkColumns.some((col, idx) => col !== baseColumns[idx])
   ) {
-    const message = `Lệch cấu trúc cột khi nối lô PO cũ tại ${label}: [${chunkColumns.join(', ')}] !== [${baseColumns.join(', ')}]`;
+    const message = `Lệch cấu trúc cột khi nối lô SO cũ tại ${label}: [${chunkColumns.join(', ')}] !== [${baseColumns.join(', ')}]`;
     logger.error(message);
     throw new InternalServerErrorException(message);
   }
@@ -107,16 +107,18 @@ export class SapReturnMonitorService {
    */
   async getReturnMonitor(query: GetReturnMonitorQueryDto): Promise<ReturnMonitorDataDto> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo || todayInVietnam().replaceAll('-', '');
     const rawBrand = query.brand ?? MONITOR_DEFAULT_BRAND;
-    const brand = rawBrand.toUpperCase() === 'ALL' ? 'ALL' : rawBrand;
+    const brand =
+      rawBrand.trim().toUpperCase() === 'ALL' ? '' : rawBrand.trim();
     const refresh = Boolean(query.refresh);
 
-    assertSapDate(dateFrom);
+    assertSapDateRange(dateFrom, dateTo);
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
     const currentConfigEpoch = this.getCombinedConfigEpoch();
-    const cacheKey = `${dateFrom}:${brand}`;
+    const cacheKey = `${dateFrom}:${dateTo}:${brand}`;
     const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
     if (refresh) {
@@ -149,7 +151,7 @@ export class SapReturnMonitorService {
       }
     }
 
-    const execPromise = this.executeFetch(dateFrom, brand);
+    const execPromise = this.executeFetch(dateFrom, dateTo, brand);
     this.inFlight.set(inFlightKey, execPromise);
 
     try {
@@ -198,26 +200,31 @@ export class SapReturnMonitorService {
 
   private async executeFetch(
     dateFrom: string,
+    dateTo: string,
     brand: string,
   ): Promise<ReturnMonitorDataDto> {
     const startedAt = Date.now();
     let queryCount = 0;
     const today = todayInVietnam();
-    const activeStoreCodes = await this.storeService.getActiveStoreCodes(brand, 'return');
-    const shouldFilter = activeStoreCodes.size > 0;
-    if (!shouldFilter) {
+    const activeStoreCodes = await this.storeService.getActiveStoreCodes(
+      brand || 'ALL',
+      'return',
+    );
+    if (activeStoreCodes.size === 0) {
       this.logger.warn(
-        `[SapReturnMonitorService] Brand ${brand} has no active return stores configured. Falling back to all stores.`,
+        `[SapReturnMonitorService] Brand ${brand || 'ALL'} has no active return stores configured. Returning empty results.`,
       );
     }
 
     const querySnapshot = await this.queryConfigService.getSnapshot();
 
-    // Bước 1: Chạy tuần tự 7 câu truy vấn chuẩn (po, so, do, ar, grpo, ap, whs)
+    // Bước 1: Chạy tuần tự 7 câu truy vấn chính (so, po, do, ar, grpo, ap, whs)
     const listQueries = this.queryConfigService.buildReturnMainSqlMap(
       querySnapshot,
       dateFrom,
       brand,
+      undefined,
+      dateTo,
     );
     const results = {} as Record<ReturnListQueryKey, SapQueryResult>;
     for (const key of RETURN_LIST_ORDER) {
@@ -228,52 +235,54 @@ export class SapReturnMonitorService {
       queryCount++;
     }
 
-    // Bước 2: Tập hợp các PO Number của nhóm mới từ kết quả po
-    const poNumIdx = results.po.columns.indexOf('PO Number');
-    const newPoSet = new Set<number>(
-      poNumIdx >= 0
-        ? results.po.rows
-            .map((r) => Number(r[poNumIdx]))
+    // Bước 2: Tập hợp các SO Number của nhóm mới từ kết quả so
+    const soNumIdx = results.so.columns.indexOf('SO Number');
+    const newSoSet = new Set<number>(
+      soNumIdx >= 0
+        ? results.so.rows
+            .map((r) => Number(r[soNumIdx]))
             .filter((n) => Number.isSafeInteger(n) && n > 0)
         : [],
     );
 
-    // Bước 3: Chạy tuần tự 5 câu ret_old_1..5 tìm ứng viên PO cũ và lọc những PO chưa nằm trong tập PO mới
+    // Bước 3: Chạy tuần tự 5 câu old_sos_1..5 tìm ứng viên SO cũ và lọc những SO chưa nằm trong tập SO mới
     const oldDiscoveryQueries =
       this.queryConfigService.buildReturnOldDiscoverySqlMap(
         querySnapshot,
         dateFrom,
         brand,
+        dateTo,
       );
-    const oldPoSet = new Set<number>();
+    const oldSoSet = new Set<number>();
     for (const oldKey of SAP_RETURN_OLD_QUERY_KEYS) {
-      const oldPosResult = await this.gateway.run(
+      const oldSosResult = await this.gateway.run(
         `return-candidates:${oldKey}`,
         oldDiscoveryQueries[oldKey],
       );
       queryCount++;
-      const oldPoColIdx = oldPosResult.columns.indexOf('PO Number');
-      if (oldPoColIdx >= 0) {
-        for (const row of oldPosResult.rows) {
-          const n = Number(row[oldPoColIdx]);
-          if (Number.isSafeInteger(n) && n > 0 && !newPoSet.has(n)) {
-            oldPoSet.add(n);
+      const oldSoColIdx = oldSosResult.columns.indexOf('SO Number');
+      if (oldSoColIdx >= 0) {
+        for (const row of oldSosResult.rows) {
+          const n = Number(row[oldSoColIdx]);
+          if (Number.isSafeInteger(n) && n > 0 && !newSoSet.has(n)) {
+            oldSoSet.add(n);
           }
         }
       }
     }
-    const oldPos = [...oldPoSet].sort((a, b) => a - b);
+    const oldSos = [...oldSoSet].sort((a, b) => a - b);
 
-    // Bước 4: Chia lô tối đa 300 PO nhóm cũ và bỏ qua truy vấn whs (Bẫy lệch số 6)
-    for (let i = 0; i < oldPos.length; i += OLD_PO_CHUNK_SIZE) {
-      const chunk = oldPos.slice(i, i + OLD_PO_CHUNK_SIZE);
+    // Bước 4: Chia lô tối đa 150 SO nhóm cũ và bỏ qua truy vấn whs (Mục 7.1 Đặc tả v1.1)
+    for (let i = 0; i < oldSos.length; i += OLD_SO_CHUNK_SIZE) {
+      const chunk = oldSos.slice(i, i + OLD_SO_CHUNK_SIZE);
       const chunkQueries = this.queryConfigService.buildReturnMainSqlMap(
         querySnapshot,
         dateFrom,
         brand,
         chunk,
+        dateTo,
       );
-      for (const key of RETURN_OLD_PO_ORDER) {
+      for (const key of RETURN_OLD_SO_ORDER) {
         const chunkRes = await this.gateway.run(
           `return-old:${key}:${i}`,
           chunkQueries[key],
@@ -291,18 +300,20 @@ export class SapReturnMonitorService {
       }
     }
 
-    // Bước 5: Lọc theo cửa hàng active (in-memory Set<string>) và gọi Pure Domain Logic
-    if (shouldFilter) {
-      const storeIdx = results.po.columns.indexOf('Store');
-      if (storeIdx >= 0) {
-        results.po = {
-          columns: results.po.columns,
-          rows: results.po.rows.filter((r) =>
-            activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
-          ),
-        };
-      }
-    }
+    // Bước 5: Lọc nghiêm ngặt theo cửa hàng đang bật cho phép Query (in-memory Set<string>)
+    const storeIdx = results.so.columns.indexOf('Store');
+    results.so = {
+      columns: results.so.columns,
+      rows:
+        storeIdx >= 0
+          ? results.so.rows.filter((r) => {
+              const storeCode = String(r[storeIdx] ?? '').trim();
+              return activeStoreCodes.has(storeCode);
+            })
+          : activeStoreCodes.size === 0
+            ? []
+            : results.so.rows,
+    };
 
     const {
       table: chainTable,
@@ -351,6 +362,7 @@ export class SapReturnMonitorService {
     return {
       meta: {
         dateFrom,
+        dateTo,
         brand,
         today,
         generatedAt: new Date().toISOString(),

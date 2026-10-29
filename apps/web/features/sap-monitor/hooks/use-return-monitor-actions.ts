@@ -19,6 +19,7 @@ import {
   DEFAULT_RETURN_BRAND,
   type ReturnViewMode,
   getReturnMonitorErrorMessage,
+  getTodaySapDate,
   getYesterdaySapDate,
   resolveReturnGridData,
 } from '@/lib/sap-monitor/return-monitor-domain';
@@ -32,6 +33,7 @@ export function useReturnMonitorActions({
 }: UseReturnMonitorActionsOptions = {}) {
   const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState<string>(() => getYesterdaySapDate());
+  const [dateTo, setDateTo] = useState<string>(() => getTodaySapDate());
   const [brand, setBrand] = useState<string>(DEFAULT_RETURN_BRAND);
 
   const [selectedCohort, setSelectedCohort] = useState<CohortFilter>('moi');
@@ -43,11 +45,11 @@ export function useReturnMonitorActions({
   const [isDetailExporting, setIsDetailExporting] = useState<boolean>(false);
   const [isGridExporting, setIsGridExporting] = useState<boolean>(false);
 
+  const apiBrand = brand === 'ALL' ? '' : brand;
   const queryParams = useMemo(
-    () => ({ dateFrom, brand, refresh: false }),
-    [dateFrom, brand],
+    () => ({ dateFrom, dateTo, brand: apiBrand, refresh: false }),
+    [dateFrom, dateTo, apiBrand],
   );
-
   const query = useSapReturnMonitorGetData(queryParams, {
     query: {
       enabled,
@@ -72,12 +74,13 @@ export function useReturnMonitorActions({
   const handleReload = useCallback(async () => {
     setIsReloading(true);
     const toastId = toast.loading(
-      `Đang tải lại dữ liệu luồng trả mới nhất từ SAP HANA (${dateFrom} · Brand ${brand})...`,
+      `Đang tải lại dữ liệu luồng trả mới nhất từ SAP HANA (${dateFrom} -> ${dateTo} · Brand ${brand || 'Tất cả'})...`,
     );
     try {
       const freshResponse = await sapReturnMonitorGetData({
         dateFrom,
-        brand,
+        dateTo,
+        brand: apiBrand,
         refresh: true,
       });
       queryClient.setQueryData(
@@ -92,8 +95,7 @@ export function useReturnMonitorActions({
     } finally {
       setIsReloading(false);
     }
-  }, [brand, dateFrom, queryClient, queryParams]);
-
+  }, [apiBrand, brand, dateFrom, dateTo, queryClient, queryParams]);
   const handleCohortChange = useCallback((cohort: CohortFilter) => {
     setSelectedCohort(cohort);
     setViewMode('po');
@@ -139,14 +141,14 @@ export function useReturnMonitorActions({
     setIsDetailExporting(true);
     const toastId = toast.loading('Đang xuất file Excel chi tiết luồng trả (3 sheets)...');
     try {
-      await downloadReturnMonitorDetailExcel({ dateFrom, brand });
+      await downloadReturnMonitorDetailExcel({ dateFrom, dateTo, brand: apiBrand });
       toast.success('Đã xuất file Excel chi tiết thành công.', { id: toastId });
     } catch (err) {
       toast.error(getReturnMonitorErrorMessage(err), { id: toastId });
     } finally {
       setIsDetailExporting(false);
     }
-  }, [brand, dateFrom]);
+  }, [apiBrand, dateFrom, dateTo]);
 
   const handleExportGrid = useCallback(async () => {
     if (activeGrid.rows.length === 0) {
@@ -159,7 +161,8 @@ export function useReturnMonitorActions({
     try {
       await downloadReturnMonitorGridExcel({
         dateFrom,
-        brand,
+        dateTo,
+        brand: apiBrand,
         cohort: selectedCohort,
         viewMode,
         statusFilter,
@@ -170,11 +173,13 @@ export function useReturnMonitorActions({
     } finally {
       setIsGridExporting(false);
     }
-  }, [activeGrid.rows.length, brand, dateFrom, selectedCohort, statusFilter, viewMode]);
+  }, [activeGrid.rows.length, apiBrand, dateFrom, dateTo, selectedCohort, statusFilter, viewMode]);
 
   return {
     dateFrom,
     setDateFrom,
+    dateTo,
+    setDateTo,
     brand,
     setBrand,
     selectedCohort,

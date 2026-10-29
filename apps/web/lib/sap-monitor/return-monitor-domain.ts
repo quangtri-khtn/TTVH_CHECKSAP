@@ -1,5 +1,5 @@
-// Pure domain helpers cho màn hình Monitor Luồng Trả hàng (/sap/monitor-tra):
-// lọc bảng theo Nhóm PO & Trạng thái chuỗi chứng từ, giải quyết dữ liệu lưới, định dạng ô và thông báo lỗi.
+// Pure domain helpers cho màn hình Monitor Luồng Trả hàng theo gốc SO (/sap/monitor-tra):
+// lọc bảng theo Nhóm SO & 11 Trạng thái chuỗi chứng từ, giải quyết dữ liệu lưới, định dạng ô và thông báo lỗi.
 import { ApiError } from '@/lib/api/http-client';
 import type {
   ReturnMonitorListsDto,
@@ -13,6 +13,7 @@ import {
   dateInputToSapDate,
   formatSalesGeneratedTime,
   formatSapCell,
+  getTodaySapDate,
   getYesterdaySapDate,
   sapDateToDateInput,
 } from './sales-monitor-domain';
@@ -23,6 +24,7 @@ export {
   type SapCellValue,
   dateInputToSapDate,
   formatSapCell,
+  getTodaySapDate,
   getYesterdaySapDate,
   sapDateToDateInput,
 };
@@ -31,6 +33,7 @@ export type ReturnViewMode = 'po' | 'ar_noinv';
 export type ReturnStatusKey = keyof ReturnStatusCountsDto;
 
 export const DEFAULT_RETURN_DATE_FROM = getYesterdaySapDate();
+export const DEFAULT_RETURN_DATE_TO = getTodaySapDate();
 export const DEFAULT_RETURN_BRAND = '5001';
 export const RETURN_BRAND_OPTIONS = SALES_BRAND_OPTIONS;
 
@@ -39,17 +42,19 @@ export const RETURN_CHAIN_COLUMNS = [
   'Store',
   'Ten cua hang',
   'Brand',
-  'PO Number',
-  'PO DocDate',
-  'PO CreateDate',
-  'MC Docnum',
-  'Kho nhan PO (KBMD)',
-  'Ten kho nhan (KBMD)',
   'SO Number',
   'SO DocDate',
   'SO CreateDate',
   'SO ShipDate',
+  'MC Docnum',
+  'Nguon SO',
+  'SO Huy',
   'Kho xuat SO (TTVH)',
+  'PO Number',
+  'PO DocDate',
+  'PO CreateDate',
+  'Kho nhan PO (KBMD)',
+  'Ten kho nhan (KBMD)',
   'DO Number',
   'AR Number',
   'Invoice No',
@@ -61,6 +66,7 @@ export const RETURN_CHAIN_COLUMNS = [
   'GRPO DocDate',
   'Kho GRPO (KBMD)',
   'AP Number',
+  'AP Invoice No',
   'AP DocDate',
   'Trang thai chuoi chung tu',
 ] as const;
@@ -69,17 +75,21 @@ export const RETURN_AR_NOINV_COLS = [
   'Nhom',
   'Store',
   'Ten cua hang',
-  'PO Number',
-  'MC Docnum',
   'SO Number',
+  'SO DocDate',
+  'SO CreateDate',
+  'MC Docnum',
+  'PO Number',
+  'PO DocDate',
+  'PO CreateDate',
   'SO ShipDate',
   'AR Number',
   'AR DocDate',
   'AR CreateDate',
   'AR ShipDate',
   'Tuoi A/R (ngay)',
-  'PO con A/R khac da xuat HD',
-  'Trang thai PO',
+  'SO con A/R khac da xuat HD',
+  'Trang thai SO',
   'Ghi chu',
 ] as const;
 
@@ -94,39 +104,51 @@ export const RET_FUNNEL_HEADERS = [
   'Cần xử lý',
 ] as const;
 
-export const RST_NO_SO = '1 - PO chưa sync sang SO (TTVH)';
-export const RST_NO_AR = '2 - Có SO, chưa có A/R (TTVH)';
+export const RST_SO_CANCELED =
+  '0 - SO (TTVH) đã hủy nhưng PO (KBMD) sinh từ SO vẫn mở – cần hủy PO';
+export const RST_NO_PO = '1 - SO chưa sinh PO (KBMD)';
+export const RST_NO_SO = RST_NO_PO;
+export const RST_NO_AR = '2 - Có SO + PO, chưa có A/R (TTVH)';
 export const RST_NO_AR_WAIT_SHIP =
-  '2a - Có SO, chưa có A/R: SO ShipDate > hôm nay, chưa đến ngày xuất hàng (bình thường)';
+  '2a - Có SO + PO, chưa có A/R: SO ShipDate > hôm nay, chưa đến ngày xuất hàng (bình thường)';
 export const RST_AR_NO_INV = '3 - Có A/R, chưa xuất hóa đơn';
 export const RST_NO_GRPO = '4 - A/R đã xuất HĐ, chưa có GRPO (KBMD)';
 export const RST_NO_GRPO_WAIT_SHIP =
   '4a - A/R đã xuất HĐ, chưa có GRPO: SO ShipDate > hôm nay, chờ đến ngày (bình thường)';
 export const RST_NO_AP = '5 - Có GRPO, chưa có AP (KBMD)';
-export const RST_FULL = '6 - Đủ chuỗi PO → AP';
+export const RST_AP_NO_INV = '6 - Có AP, chưa có Invoice (KBMD)';
+export const RST_FULL = '7 - Đủ chuỗi SO → PO → AP → Invoice';
+export const RST_MANUAL_SO =
+  '8 - SO thủ công (không có MC_Docnum, không qua MC Tool) – không sinh PO tự động (tham khảo)';
 
 export const RET_STATUS_ORDER = [
-  RST_NO_SO,
+  RST_SO_CANCELED,
+  RST_NO_PO,
   RST_NO_AR,
   RST_NO_AR_WAIT_SHIP,
   RST_AR_NO_INV,
   RST_NO_GRPO,
   RST_NO_GRPO_WAIT_SHIP,
   RST_NO_AP,
+  RST_AP_NO_INV,
   RST_FULL,
+  RST_MANUAL_SO,
 ] as const;
 
 export type ReturnStatusLabel = (typeof RET_STATUS_ORDER)[number];
 
 export const RET_STATUS_META = [
-  { key: 'po_no_so', label: RST_NO_SO, unit: 'PO', tag: 'attn' },
-  { key: 'so_no_ar', label: RST_NO_AR, unit: 'PO', tag: 'attn' },
-  { key: 'so_no_ar_wait', label: RST_NO_AR_WAIT_SHIP, unit: 'PO', tag: 'normal' },
-  { key: 'ar_no_inv', label: RST_AR_NO_INV, unit: 'PO', tag: 'attn' },
-  { key: 'ar_no_grpo', label: RST_NO_GRPO, unit: 'PO', tag: 'attn' },
-  { key: 'ar_no_grpo_wait', label: RST_NO_GRPO_WAIT_SHIP, unit: 'PO', tag: 'normal' },
-  { key: 'grpo_no_ap', label: RST_NO_AP, unit: 'PO', tag: 'attn' },
-  { key: 'po_full', label: RST_FULL, unit: 'PO', tag: '' },
+  { key: 'so_canceled', label: RST_SO_CANCELED, unit: 'SO', tag: 'attn' },
+  { key: 'so_no_po', label: RST_NO_PO, unit: 'SO', tag: 'attn' },
+  { key: 'so_no_ar', label: RST_NO_AR, unit: 'SO', tag: 'attn' },
+  { key: 'so_no_ar_wait', label: RST_NO_AR_WAIT_SHIP, unit: 'SO', tag: 'normal' },
+  { key: 'ar_no_inv', label: RST_AR_NO_INV, unit: 'SO', tag: 'attn' },
+  { key: 'ar_no_grpo', label: RST_NO_GRPO, unit: 'SO', tag: 'attn' },
+  { key: 'ar_no_grpo_wait', label: RST_NO_GRPO_WAIT_SHIP, unit: 'SO', tag: 'normal' },
+  { key: 'grpo_no_ap', label: RST_NO_AP, unit: 'SO', tag: 'attn' },
+  { key: 'ap_no_inv', label: RST_AP_NO_INV, unit: 'SO', tag: 'attn' },
+  { key: 'so_full', label: RST_FULL, unit: 'SO', tag: '' },
+  { key: 'so_manual', label: RST_MANUAL_SO, unit: 'SO', tag: 'normal' },
 ] as const satisfies readonly {
   key: ReturnStatusKey;
   label: ReturnStatusLabel;
@@ -135,7 +157,7 @@ export const RET_STATUS_META = [
 }[];
 
 export const RETURN_VIEW_OPTIONS = [
-  { key: 'po', label: 'Danh sách PO trả hàng', isAlert: false },
+  { key: 'po', label: 'Danh sách SO trả hàng', isAlert: false },
   { key: 'ar_noinv', label: 'A/R chưa xuất hóa đơn', isAlert: true },
 ] as const satisfies readonly { key: ReturnViewMode; label: string; isAlert: boolean }[];
 
@@ -184,7 +206,7 @@ export function resolveReturnGridData(params: {
       title:
         viewMode === 'ar_noinv'
           ? 'A/R (TTVH) chưa xuất hóa đơn (0 A/R) – sắp theo tuổi A/R giảm dần'
-          : `Danh sách PO trả hàng (0)${statusFilter ? ` – ${statusFilter}` : ''}`,
+          : `Danh sách SO trả hàng (0)${statusFilter ? ` – ${statusFilter}` : ''}`,
       drilldownTitle:
         viewMode === 'ar_noinv'
           ? 'A/R (TTVH) chưa xuất hóa đơn (0 A/R) – sắp theo tuổi A/R giảm dần'
@@ -217,13 +239,13 @@ export function resolveReturnGridData(params: {
     statusFilter && statusColIdx !== -1
       ? cohortRows.filter((r) => r[statusColIdx] === statusFilter)
       : cohortRows;
-  const title = `Danh sách PO trả hàng (${rows.length})${statusFilter ? ` – ${statusFilter}` : ''}`;
+  const title = `Danh sách SO trả hàng (${rows.length})${statusFilter ? ` – ${statusFilter}` : ''}`;
 
   return {
     columns,
     rows,
     title,
-    drilldownTitle: statusFilter ? `${statusFilter} (${rows.length} PO)` : null,
+    drilldownTitle: statusFilter ? `${statusFilter} (${rows.length} SO)` : null,
   };
 }
 
@@ -231,15 +253,25 @@ export function formatReturnGeneratedTime(generatedAt: string | undefined): stri
   return formatSalesGeneratedTime(generatedAt);
 }
 
-export function formatReturnScopeLine(dateFrom: string, brand: string): string {
+export function formatReturnScopeLine(
+  dateFrom: string,
+  brand: string,
+  dateTo?: string,
+): string {
   const formattedDate = /^\d{8}$/.test(dateFrom)
     ? `${dateFrom.slice(6, 8)}/${dateFrom.slice(4, 6)}/${dateFrom.slice(0, 4)}`
     : dateFrom;
+  const formattedTo =
+    dateTo && /^\d{8}$/.test(dateTo)
+      ? ` đến ${dateTo.slice(6, 8)}/${dateTo.slice(4, 6)}/${dateTo.slice(0, 4)}`
+      : '';
+  const trimmedBrand = brand.trim();
   const brandLabel =
-    brand.toUpperCase() === 'ALL' ? 'tất cả thương hiệu' : `brand ${brand}`;
-  return `Luồng trả (KBMD ↔ TTVH) từ ${formattedDate}, ${brandLabel} + cửa hàng pilot. Nhóm mới = PO từ ngày này; nhóm cũ = PO trước ngày này còn phát sinh chứng từ.`;
+    !trimmedBrand || trimmedBrand.toUpperCase() === 'ALL'
+      ? 'tất cả thương hiệu'
+      : `brand ${trimmedBrand}`;
+  return `Luồng trả (TTVH ↔ KBMD) từ ${formattedDate}${formattedTo}, ${brandLabel} + cửa hàng pilot. Nhóm mới = SO từ ngày này; nhóm cũ = SO trước ngày này còn phát sinh chứng từ.`;
 }
-
 export function getReturnMonitorErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 503) {

@@ -25,9 +25,10 @@ import {
   formatSapCell,
   getReturnViewRowCount,
 } from '@/lib/sap-monitor/return-monitor-domain';
+import { getReturnListViewQueryKeys } from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
 import { SapDataGrid } from './sap-data-grid';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface ReturnMonitorListPanelProps {
   lists: ReturnMonitorListsDto | undefined;
   viewMode: ReturnViewMode;
@@ -154,8 +155,12 @@ export function ReturnMonitorListPanel({
           {displayRowCount.toLocaleString('en-US')} dòng
         </Badge>
 
-        <span className="hidden text-xs text-muted-foreground lg:inline">{title}</span>
+        <SapQueryTagBar
+          label="SQL:"
+          queryKeys={getReturnListViewQueryKeys(viewMode, selectedCohort)}
+        />
 
+        <span className="hidden text-xs text-muted-foreground lg:inline">{title}</span>
         <div className="ml-auto">
           <Button
             type="button"

@@ -25,8 +25,9 @@ import {
   formatSapCell,
   getReturnMonitorErrorMessage,
 } from '@/lib/sap-monitor/return-monitor-domain';
+import { getReturnKpiQueryKeys } from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface ReturnMonitorStatusBarProps {
   dateFrom: string;
   brand: string;
@@ -142,7 +143,7 @@ export function ReturnMonitorStatusBar({
       </div>
 
       <div className="grid grid-cols-2 gap-3.5 xl:grid-cols-4">
-        {kpiCards.map(({ label, value, sub, tone, icon: Icon }) => (
+        {kpiCards.map(({ label, value, sub, tone, icon: Icon }, cardIdx) => (
           <Card
             key={label}
             size="sm"
@@ -170,6 +171,10 @@ export function ReturnMonitorStatusBar({
                 {summary ? formatSapCell(value) : isBusy ? '...' : '0'}
               </span>
               <span className="text-[11px] font-medium text-muted-foreground">{sub}</span>
+              <SapQueryTagBar
+                queryKeys={getReturnKpiQueryKeys(cardIdx)}
+                className="pt-1"
+              />
             </CardContent>
           </Card>
         ))}

@@ -6,11 +6,13 @@
  */
 
 export interface ReturnStatusCountsDto {
-  /** 1 - PO chưa sync sang SO (TTVH) */
-  po_no_so: number;
-  /** 2 - Có SO, chưa có A/R (TTVH) */
+  /** 0 - SO (TTVH) đã hủy nhưng PO (KBMD) sinh từ SO vẫn mở – cần hủy PO */
+  so_canceled: number;
+  /** 1 - SO chưa sinh PO (KBMD) */
+  so_no_po: number;
+  /** 2 - Có SO + PO, chưa có A/R (TTVH) */
   so_no_ar: number;
-  /** 2a - Có SO, chưa có A/R: SO ShipDate > hôm nay (bình thường) */
+  /** 2a - Có SO + PO, chưa có A/R: SO ShipDate > hôm nay (bình thường) */
   so_no_ar_wait: number;
   /** 3 - Có A/R, chưa xuất hóa đơn */
   ar_no_inv: number;
@@ -20,6 +22,10 @@ export interface ReturnStatusCountsDto {
   ar_no_grpo_wait: number;
   /** 5 - Có GRPO, chưa có AP (KBMD) */
   grpo_no_ap: number;
-  /** 6 - Đủ chuỗi PO → AP */
-  po_full: number;
+  /** 6 - Có AP, chưa có Invoice (KBMD) */
+  ap_no_inv: number;
+  /** 7 - Đủ chuỗi SO → PO → AP → Invoice */
+  so_full: number;
+  /** 8 - SO thủ công (không có MC_Docnum, không qua MC Tool) – không sinh PO tự động (tham khảo) */
+  so_manual: number;
 }

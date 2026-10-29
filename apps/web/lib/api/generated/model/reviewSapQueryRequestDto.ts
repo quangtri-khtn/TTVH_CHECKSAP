@@ -10,6 +10,8 @@ export interface ReviewSapQueryRequestDto {
   sqlText: string;
   /** Từ ngày chạy thử theo định dạng YYYYMMDD */
   dateFrom?: string;
-  /** Mã thương hiệu chạy thử (1-10 ký tự chữ và số ASCII) */
+  /** Đến ngày chạy thử theo định dạng YYYYMMDD (tùy chọn) */
+  dateTo?: string;
+  /** Mã thương hiệu chạy thử (1-10 ký tự chữ và số ASCII, hoặc để trống = mọi brand) */
   brand?: string;
 }

@@ -18,8 +18,9 @@ import {
   type ReturnViewMode,
   formatSapCell,
 } from '@/lib/sap-monitor/return-monitor-domain';
+import { RETURN_CHAIN_QUERY_KEYS } from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface ReturnChainStatusTableProps {
   statusCounts: ReturnStatusCountsDto | undefined;
   poCount: number | undefined;
@@ -39,9 +40,12 @@ export function ReturnChainStatusTable({
 }: ReturnChainStatusTableProps) {
   return (
     <section className="flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs animate-in fade-in slide-in-from-top-2 duration-200">
-      <h2 className="text-xs font-semibold text-foreground">
-        Trạng thái chuỗi chứng từ – nhấp một dòng để lọc danh sách PO trả hàng bên dưới
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold text-foreground">
+          Trạng thái chuỗi chứng từ – nhấp một dòng để lọc danh sách SO trả hàng bên dưới
+        </h2>
+        <SapQueryTagBar label="SQL:" queryKeys={RETURN_CHAIN_QUERY_KEYS} />
+      </div>
 
       <div className="overflow-hidden rounded-md border">
         <Table className="text-xs">
@@ -54,7 +58,7 @@ export function ReturnChainStatusTable({
                 Đơn vị
               </TableHead>
               <TableHead className="h-9 w-36 px-3 py-2 text-right text-xs font-semibold text-foreground">
-                Số PO
+                Số SO
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -129,11 +133,11 @@ export function ReturnChainStatusTable({
               className="cursor-pointer bg-muted/40 font-semibold transition-colors hover:bg-muted/70"
             >
               <TableCell className="border-r px-3 py-2">
-                Tổng số PO trả hàng (xem toàn bộ chuỗi)
+                Tổng số SO trả hàng (xem toàn bộ chuỗi)
               </TableCell>
               <TableCell className="border-r px-3 py-2 text-center">
                 <Badge variant="outline" className="font-mono text-[11px]">
-                  PO
+                  SO
                 </Badge>
               </TableCell>
               <TableCell className="px-3 py-2 text-right font-mono tabular-nums">

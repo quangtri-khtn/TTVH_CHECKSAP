@@ -1,5 +1,5 @@
 // Các DTO phản hồi cho API GET /sap/return-monitor với 4 khóa ở root của data và kế thừa ApiResponseDto.
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiResponseDto } from '../../../common/dto/api-response.dto';
 import { SapTableDto } from './sales-monitor-table.dto';
 
@@ -7,7 +7,10 @@ export class ReturnMonitorMetaDto {
   @ApiProperty({ description: 'Từ ngày truy vấn (YYYYMMDD)', example: '20261007' })
   dateFrom!: string;
 
-  @ApiProperty({ description: 'Mã thương hiệu truy vấn', example: '5001' })
+  @ApiPropertyOptional({ description: 'Đến ngày truy vấn (YYYYMMDD)', example: '20261028' })
+  dateTo?: string;
+
+  @ApiProperty({ description: 'Mã thương hiệu truy vấn (chuỗi rỗng = mọi brand)', example: '5001' })
   brand!: string;
 
   @ApiProperty({ description: 'Ngày hiện tại theo múi giờ Việt Nam (YYYY-MM-DD)', example: '2026-10-21' })
@@ -79,13 +82,16 @@ export class ReturnFunnelStepDto {
 }
 
 export class ReturnStatusCountsDto {
-  @ApiProperty({ description: '1 - PO chưa sync sang SO (TTVH)' })
-  po_no_so!: number;
+  @ApiProperty({ description: '0 - SO (TTVH) đã hủy nhưng PO (KBMD) sinh từ SO vẫn mở – cần hủy PO' })
+  so_canceled!: number;
 
-  @ApiProperty({ description: '2 - Có SO, chưa có A/R (TTVH)' })
+  @ApiProperty({ description: '1 - SO chưa sinh PO (KBMD)' })
+  so_no_po!: number;
+
+  @ApiProperty({ description: '2 - Có SO + PO, chưa có A/R (TTVH)' })
   so_no_ar!: number;
 
-  @ApiProperty({ description: '2a - Có SO, chưa có A/R: SO ShipDate > hôm nay (bình thường)' })
+  @ApiProperty({ description: '2a - Có SO + PO, chưa có A/R: SO ShipDate > hôm nay (bình thường)' })
   so_no_ar_wait!: number;
 
   @ApiProperty({ description: '3 - Có A/R, chưa xuất hóa đơn' })
@@ -100,8 +106,14 @@ export class ReturnStatusCountsDto {
   @ApiProperty({ description: '5 - Có GRPO, chưa có AP (KBMD)' })
   grpo_no_ap!: number;
 
-  @ApiProperty({ description: '6 - Đủ chuỗi PO → AP' })
-  po_full!: number;
+  @ApiProperty({ description: '6 - Có AP, chưa có Invoice (KBMD)' })
+  ap_no_inv!: number;
+
+  @ApiProperty({ description: '7 - Đủ chuỗi SO → PO → AP → Invoice' })
+  so_full!: number;
+
+  @ApiProperty({ description: '8 - SO thủ công (không có MC_Docnum, không qua MC Tool) – không sinh PO tự động (tham khảo)' })
+  so_manual!: number;
 }
 
 export class ReturnMonitorCohortDto {

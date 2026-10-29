@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, RotateCcw, Store, TrendingUp } from 'lucide-react';
+import { CheckCircle2, Clock, Store, XCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { STATUS_TONE_CLASS, STATUS_TONE_TEXT, type StatusTone } from '@/lib/admin/status-tone';
 import { formatSyncedAt, type SapStoreMetrics } from '@/lib/admin/sap-store-domain';
@@ -27,18 +27,18 @@ export function SapStoresMetrics({ metrics, isLoading }: SapStoresMetricsProps) 
       icon: Store,
     },
     {
-      label: 'Active Luồng Bán',
-      value: isLoading ? '...' : String(metrics.activeSalesCount),
-      sub: 'Cho phép tính vào Monitor Bán hàng',
-      tone: metrics.activeSalesCount > 0 ? 'success' : 'warning',
-      icon: TrendingUp,
+      label: 'Đang bật Query',
+      value: isLoading ? '...' : String(metrics.activeQueryCount),
+      sub: 'Cho phép tính vào Monitor Bán & Trả',
+      tone: metrics.activeQueryCount > 0 ? 'success' : 'warning',
+      icon: CheckCircle2,
     },
     {
-      label: 'Active Luồng Trả',
-      value: isLoading ? '...' : String(metrics.activeReturnCount),
-      sub: 'Cho phép tính vào Monitor Luồng trả',
-      tone: metrics.activeReturnCount > 0 ? 'info' : 'warning',
-      icon: RotateCcw,
+      label: 'Đang tắt Query',
+      value: isLoading ? '...' : String(metrics.inactiveQueryCount),
+      sub: 'Không đưa vào kết quả Monitor',
+      tone: 'neutral',
+      icon: XCircle,
     },
     {
       label: 'Đồng bộ OWHS gần nhất',

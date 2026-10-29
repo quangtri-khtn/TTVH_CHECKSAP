@@ -7,11 +7,11 @@ import {
   SALES_SO_CUSTOMER_CODE,
 } from '../lib/sap-constants';
 import {
+  applyDateTo,
   assertPoNumbers,
   assertSapBrand,
-  assertSapDate,
+  assertSapDateRange,
 } from '../lib/sap-query-params';
-
 export type SalesListQueryKey =
   | 'funnel'
   | 't1'
@@ -24,27 +24,35 @@ export type SalesListQueryKey =
 
 export type SalesChainQueryKey = 'po' | 'so' | 'ar' | 'grpo' | 'ap';
 
-/** Mảnh JOIN kho/cửa hàng để lọc theo thương hiệu (`_MONITOR_BRAND_JOIN`, desktop `:2228-2230`). */
-const _MONITOR_BRAND_JOIN = `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '{brand}'`;
+/** Mảnh JOIN kho/cửa hàng để lọc theo thương hiệu (`monitor_store_join`, Phụ lục C.1 Đặc tả v1.1). */
+function buildSalesBrandJoin(brand: string): string {
+  const normalized = brand.trim().toUpperCase() === 'ALL' ? '' : brand.trim();
+  return normalized
+    ? `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${normalized}'`
+    : `JOIN maycha_live.OWHS W ON W."WhsCode" = P."U_Store"`;
+}
 
 /**
- * Dựng 8 câu truy vấn danh sách của màn hình Monitor Bán hàng (`build_monitor_queries`, desktop `:2233-2351`).
+ * Dựng 8 câu truy vấn danh sách của màn hình Monitor Bán hàng (`build_monitor_queries`, Phụ lục C.2.1 Đặc tả v1.1).
  * Giữ nguyên thứ tự khóa: `funnel`, `t1`, `t2`, `t3`, `t4`, `ar`, `grpo`, `ap`.
  */
 export function buildSalesListQueries(
   dateFrom: string,
-  brand: string,
+  brand = '',
+  dateTo?: string,
 ): Record<SalesListQueryKey, OpenQuerySql> {
-  assertSapDate(dateFrom);
+  assertSapDateRange(dateFrom, dateTo);
   assertSapBrand(brand);
 
-  const br = _MONITOR_BRAND_JOIN.replace('{brand}', brand);
+  const br = buildSalesBrandJoin(brand);
   const d = dateFrom;
   const poCols = `P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '${d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky"`;
   const poGrp = `P."DocDate", P."CreateDate"`;
+  const wrap = (sql: string): OpenQuerySql =>
+    wrapOpenquery(applyDateTo(sql, dateFrom, dateTo));
 
   return {
-    funnel: wrapOpenquery(`
+    funnel: wrap(`
 SELECT "Store", "Ten cua hang", SUM("PO") AS "PO", SUM("SO") AS "SO" FROM (
  SELECT P."U_Store" AS "Store", W."WhsName" AS "Ten cua hang", 1 AS "PO", 0 AS "SO"
  FROM maycha_live.OPOR P ${br}
@@ -57,7 +65,7 @@ SELECT "Store", "Ten cua hang", SUM("PO") AS "PO", SUM("SO") AS "SO" FROM (
  WHERE S."CardCode" = '${SALES_SO_CUSTOMER_CODE}' AND S."CANCELED" = 'N' AND S."DocDate" >= '${d}' AND P."DocDate" >= '${d}'
 ) GROUP BY "Store", "Ten cua hang" `),
 
-    t1: wrapOpenquery(`
+    t1: wrap(`
 SELECT P."U_Store" AS "Store", P."DocNum" AS "PO Number", P."DocDate", P."CreateDate" AS "PO CreateDate", P."DocStatus" AS "PO Status",
  COUNT(*) AS "So dong PO",
  CASE WHEN MAX(CASE WHEN S."DocNum" IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'SO da bi huy' ELSE 'Chua co SO' END AS "Ly do"
@@ -70,7 +78,7 @@ WHERE P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."Doc
 GROUP BY P."U_Store", P."DocNum", P."DocDate", P."CreateDate", P."DocStatus"
 ORDER BY P."DocDate", P."DocNum" `),
 
-    t2: wrapOpenquery(`
+    t2: wrap(`
 SELECT P."U_Store" AS "Store", S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", ${poCols}, S."DocDate",
  MAX(SL."ShipDate") AS "SO ShipDate",
  CASE WHEN MAX(SL."ShipDate") > CURRENT_DATE THEN 'Chua den ShipDate - chua den ngay xuat hang (binh thuong)'
@@ -87,7 +95,7 @@ GROUP BY P."U_Store", S."DocNum", P."DocNum", ${poGrp}, S."DocDate"
 HAVING SUM(CASE WHEN IL."DocEntry" IS NULL THEN 1 ELSE 0 END) > 0
 ORDER BY S."DocDate", S."DocNum" `),
 
-    t3: wrapOpenquery(`
+    t3: wrap(`
 SELECT P."U_Store" AS "Store", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate", I."CreateDate" AS "AR CreateDate", I."U_ShipDate" AS "AR ShipDate", I."NumAtCard" AS "Invoice No",
  S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", ${poCols}, COUNT(*) AS "So dong AR",
  SUM(CASE WHEN G."DocNum" IS NULL THEN 1 ELSE 0 END) AS "So dong chua co GRPO",
@@ -107,7 +115,7 @@ GROUP BY P."U_Store", I."DocNum", I."DocDate", I."CreateDate", I."U_ShipDate", I
 HAVING SUM(CASE WHEN G."DocNum" IS NULL THEN 1 ELSE 0 END) > 0
 ORDER BY I."DocDate" DESC, I."DocNum" DESC`),
 
-    t4: wrapOpenquery(`
+    t4: wrap(`
 SELECT P."U_Store" AS "Store", G."DocNum" AS "GRPO Number", G."DocDate", P."DocNum" AS "PO Number", ${poCols}, COUNT(*) AS "So dong GRPO"
 FROM maycha_live.OPDN G
 INNER JOIN maycha_live.PDN1 GL ON GL."DocEntry" = G."DocEntry" AND GL."BaseType" = 22
@@ -118,7 +126,7 @@ WHERE G."CANCELED" = 'N' AND G."DocDate" >= '${d}'
 GROUP BY P."U_Store", G."DocNum", G."DocDate", P."DocNum", ${poGrp}
 ORDER BY G."DocDate", G."DocNum" `),
 
-    ar: wrapOpenquery(`
+    ar: wrap(`
 SELECT P."U_Store" AS "Store", I."DocNum" AS "AR Number", I."DocDate", I."NumAtCard" AS "Invoice No",
  I."U_InvSeri" AS "Invoice Seri", I."U_InvDate" AS "Invoice Date", S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", ${poCols}
 FROM kbmd_live.OINV I
@@ -129,7 +137,7 @@ ${br}
 WHERE I."DocDate" >= '${d}' AND I."CANCELED" = 'N'
 ORDER BY I."DocNum" DESC`),
 
-    grpo: wrapOpenquery(`
+    grpo: wrap(`
 SELECT P."U_Store" AS "Store", G."DocNum" AS "GRPO Number", G."DocDate", P."DocNum" AS "PO Number", ${poCols}, G."Comments"
 FROM maycha_live.OPDN G
 INNER JOIN maycha_live.PDN1 GL ON GL."DocEntry" = G."DocEntry" AND GL."LineNum" = 0 AND GL."BaseType" = 22
@@ -138,7 +146,7 @@ ${br}
 WHERE G."DocDate" >= '${d}' AND G."CANCELED" = 'N'
 ORDER BY G."DocNum" DESC`),
 
-    ap: wrapOpenquery(`
+    ap: wrap(`
 SELECT DISTINCT P."U_Store" AS "Store", A."DocNum" AS "AP Number", A."DocDate", A."NumAtCard" AS "Invoice No",
  G."DocNum" AS "GRPO Number", P."DocNum" AS "PO Number", ${poCols}
 FROM maycha_live.OPCH A
@@ -158,16 +166,17 @@ ORDER BY A."DocNum" DESC`),
  */
 export function buildSalesChainQueries(
   dateFrom: string,
-  brand: string,
+  brand = '',
   poNumbers?: readonly number[],
+  dateTo?: string,
 ): Record<SalesChainQueryKey, OpenQuerySql> {
-  assertSapDate(dateFrom);
+  assertSapDateRange(dateFrom, dateTo);
   assertSapBrand(brand);
   if (poNumbers !== undefined) {
     assertPoNumbers(poNumbers);
   }
 
-  const br = _MONITOR_BRAND_JOIN.replace('{brand}', brand);
+  const br = buildSalesBrandJoin(brand);
   const d = dateFrom;
   let poFilter = `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocDate" >= '${d}'`;
   if (poNumbers !== undefined) {
@@ -176,9 +185,13 @@ export function buildSalesChainQueries(
   }
   const poFrom = `FROM maycha_live.OPOR P ${br}`;
   const soJoin = `INNER JOIN kbmd_live.ORDR S ON S."U_from_refno" = 'PO' || TO_VARCHAR(P."DocNum") AND S."CardCode" = '${SALES_SO_CUSTOMER_CODE}' AND S."CANCELED" = 'N'`;
+  const wrap = (sql: string): OpenQuerySql =>
+    wrapOpenquery(
+      poNumbers === undefined ? applyDateTo(sql, dateFrom, dateTo) : sql,
+    );
 
   return {
-    po: wrapOpenquery(`
+    po: wrap(`
 SELECT P."U_Store" AS "Store", P."DocNum" AS "PO Number", P."DocEntry" AS "PO DocEntry",
  P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", P."DocStatus" AS "PO Status",
  COUNT(*) AS "So dong PO", SUM(PL."Quantity") AS "Tong SL PO"
@@ -187,14 +200,14 @@ INNER JOIN maycha_live.POR1 PL ON PL."DocEntry" = P."DocEntry"
 WHERE ${poFilter}
 GROUP BY P."U_Store", P."DocNum", P."DocEntry", P."DocDate", P."CreateDate", P."DocStatus" `),
 
-    so: wrapOpenquery(`
+    so: wrap(`
 SELECT DISTINCT P."DocNum" AS "PO Number", S."DocNum" AS "SO Number", S."DocDate" AS "SO DocDate", S."CreateDate" AS "SO CreateDate",
  (SELECT MAX(SL."ShipDate") FROM kbmd_live.RDR1 SL WHERE SL."DocEntry" = S."DocEntry") AS "SO ShipDate"
 ${poFrom}
 ${soJoin}
 WHERE ${poFilter}`),
 
-    ar: wrapOpenquery(`
+    ar: wrap(`
 SELECT DISTINCT P."DocNum" AS "PO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate", I."CreateDate" AS "AR CreateDate", I."U_ShipDate" AS "AR ShipDate", I."NumAtCard" AS "Invoice No"
 ${poFrom}
 ${soJoin}
@@ -202,14 +215,14 @@ INNER JOIN kbmd_live.INV1 N ON N."BaseType" = 17 AND N."BaseEntry" = S."DocEntry
 INNER JOIN kbmd_live.OINV I ON I."DocEntry" = N."DocEntry" AND I."CANCELED" = 'N'
 WHERE ${poFilter}`),
 
-    grpo: wrapOpenquery(`
+    grpo: wrap(`
 SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", G."DocDate" AS "GRPO DocDate"
 ${poFrom}
 INNER JOIN maycha_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN maycha_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'
 WHERE ${poFilter}`),
 
-    ap: wrapOpenquery(`
+    ap: wrap(`
 SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", A."DocNum" AS "AP Number", A."DocDate" AS "AP DocDate"
 ${poFrom}
 INNER JOIN maycha_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"

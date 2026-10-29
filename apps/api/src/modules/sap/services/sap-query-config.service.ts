@@ -9,6 +9,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import type {
@@ -22,7 +23,7 @@ import type {
 } from '../dto/sap-query-config.dto';
 import type { OpenQuerySql } from '../lib/openquery';
 import { MONITOR_DEFAULT_BRAND, MONITOR_DEFAULT_DATE } from '../lib/sap-constants';
-import { assertSapBrand, assertSapDate } from '../lib/sap-query-params';
+import { assertSapBrand, assertSapDateRange } from '../lib/sap-query-params';
 import {
   compareQueryColumns,
   computeSqlHash,
@@ -41,6 +42,7 @@ import {
   buildSalesChainSqlMapFromSnapshot,
   buildSalesListSqlMapFromSnapshot,
   buildStaticFailedReviewDto,
+  filterReviewQueryResultByActiveStores,
   toSapQueryDetailDto,
   toSapQuerySummaryDto,
 } from '../lib/sap-query-template-engine-mappers';
@@ -50,9 +52,10 @@ import {
   type SapQueryKey,
   type SapReturnOldCatalogKey,
   getSapQueryCatalogEntry,
+  isSapQueryKey,
 } from '../queries/sap-query-catalog';
 import { SapQueryGatewayService } from './sap-query-gateway.service';
-
+import { SapStoreService } from './sap-store.service';
 export type { ReturnMainSqlMap, SalesChainSqlMap, SapQuerySnapshot };
 
 const REVIEW_CONFLICT_MESSAGE =
@@ -78,6 +81,7 @@ export class SapQueryConfigService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: SapQueryGatewayService,
+    @Optional() private readonly storeService?: SapStoreService,
   ) {}
 
   getConfigEpoch(): number {
@@ -97,8 +101,9 @@ export class SapQueryConfigService {
     snapshot: SapQuerySnapshot,
     dateFrom: string,
     brand: string,
+    dateTo?: string,
   ): Record<SalesListQueryKey, OpenQuerySql> {
-    return buildSalesListSqlMapFromSnapshot(snapshot, dateFrom, brand);
+    return buildSalesListSqlMapFromSnapshot(snapshot, dateFrom, brand, dateTo);
   }
 
   buildSalesChainSqlMap(
@@ -106,25 +111,45 @@ export class SapQueryConfigService {
     dateFrom: string,
     brand: string,
     poNumbers?: readonly number[],
+    dateTo?: string,
   ): SalesChainSqlMap {
-    return buildSalesChainSqlMapFromSnapshot(snapshot, dateFrom, brand, poNumbers);
+    return buildSalesChainSqlMapFromSnapshot(
+      snapshot,
+      dateFrom,
+      brand,
+      poNumbers,
+      dateTo,
+    );
   }
 
   buildReturnMainSqlMap(
     snapshot: SapQuerySnapshot,
     dateFrom: string,
     brand: string,
-    poNumbers?: readonly number[],
+    soNumbers?: readonly number[],
+    dateTo?: string,
   ): ReturnMainSqlMap {
-    return buildReturnMainSqlMapFromSnapshot(snapshot, dateFrom, brand, poNumbers);
+    return buildReturnMainSqlMapFromSnapshot(
+      snapshot,
+      dateFrom,
+      brand,
+      soNumbers,
+      dateTo,
+    );
   }
 
   buildReturnOldDiscoverySqlMap(
     snapshot: SapQuerySnapshot,
     dateFrom: string,
     brand: string,
+    dateTo?: string,
   ): Record<SapReturnOldCatalogKey, OpenQuerySql> {
-    return buildReturnOldDiscoverySqlMapFromSnapshot(snapshot, dateFrom, brand);
+    return buildReturnOldDiscoverySqlMapFromSnapshot(
+      snapshot,
+      dateFrom,
+      brand,
+      dateTo,
+    );
   }
 
   async findAll(): Promise<SapQuerySummaryDto[]> {
@@ -132,7 +157,9 @@ export class SapQueryConfigService {
     const defs = await this.prisma.sapQueryDef.findMany({
       orderBy: { sortOrder: 'asc' },
     });
-    return defs.map((row) => toSapQuerySummaryDto(row, this.activeSqlByKey));
+    return defs
+      .filter((row) => isSapQueryKey(row.key))
+      .map((row) => toSapQuerySummaryDto(row, this.activeSqlByKey));
   }
 
   async findOne(key: string): Promise<SapQueryDetailDto> {
@@ -166,8 +193,9 @@ export class SapQueryConfigService {
     try {
       await this.ensureInitialized();
       const dateFrom = dto.dateFrom ?? MONITOR_DEFAULT_DATE;
+      const dateTo = dto.dateTo;
       const brand = dto.brand ?? MONITOR_DEFAULT_BRAND;
-      assertSapDate(dateFrom);
+      assertSapDateRange(dateFrom, dateTo);
       assertSapBrand(brand);
 
       const normalizedSql = normalizeSqlText(dto.sqlText);
@@ -191,11 +219,19 @@ export class SapQueryConfigService {
         return buildStaticFailedReviewDto(entry, staticRes, testedAt);
       }
 
-      const renderedSql = renderCatalogSql(normalizedSql, { dateFrom, brand });
+      const renderedSql = renderCatalogSql(normalizedSql, {
+        dateFrom,
+        dateTo,
+        brand,
+        autoDateUpper: entry.autoDateUpper,
+      });
       const startMs = Date.now();
-      let queryResult;
+      let rawQueryResult;
       try {
-        queryResult = await this.gateway.run(`review:${entry.key}`, renderedSql);
+        rawQueryResult = await this.gateway.run(
+          `review:${entry.key}`,
+          renderedSql,
+        );
       } catch (err) {
         await this.recordAudit(
           entry.key,
@@ -209,6 +245,17 @@ export class SapQueryConfigService {
         );
         throw err;
       }
+      const activeStoreCodes = this.storeService
+        ? await this.storeService.getActiveStoreCodes(
+            brand.trim() || 'ALL',
+            entry.flow === 'ban' ? 'sales' : 'return',
+          )
+        : null;
+      const queryResult = filterReviewQueryResultByActiveStores(
+        entry,
+        rawQueryResult,
+        activeStoreCodes,
+      );
       const durationMs = Math.max(0, Date.now() - startMs);
       const colDiff = compareQueryColumns(
         entry,
@@ -395,11 +442,15 @@ export class SapQueryConfigService {
     const beforeSql =
       this.activeSqlByKey.get(entry.key) ?? normalizeSqlText(def.defaultSql);
     const nextVersionNo = await this.prisma.$transaction(async (tx) => {
+      const latestDef = await tx.sapQueryDef.findUnique({
+        where: { key: entry.key },
+      });
       const maxVer = await tx.sapQueryVersion.aggregate({
         where: { queryKey: entry.key },
         _max: { versionNo: true },
       });
-      const nextVer = (maxVer._max.versionNo ?? 0) + 1;
+      const fromVer = latestDef?.currentVersionNo ?? def.currentVersionNo;
+      const nextVer = Math.max(maxVer._max.versionNo ?? 0, fromVer) + 1;
       await tx.sapQueryVersion.create({
         data: {
           queryKey: entry.key,
@@ -419,7 +470,7 @@ export class SapQueryConfigService {
         data: {
           queryKey: entry.key,
           action,
-          fromVersion: def.currentVersionNo,
+          fromVersion: fromVer,
           toVersion: nextVer,
           beforeSql,
           afterSql: normalizedSql,
@@ -430,10 +481,11 @@ export class SapQueryConfigService {
       });
       return nextVer;
     });
-
-    this.activeSqlByKey.set(entry.key, normalizedSql);
-    this.activeVersionByKey.set(entry.key, nextVersionNo);
-    this.configEpoch++;
+    if (nextVersionNo >= (this.activeVersionByKey.get(entry.key) ?? 0)) {
+      this.activeSqlByKey.set(entry.key, normalizedSql);
+      this.activeVersionByKey.set(entry.key, nextVersionNo);
+      this.configEpoch++;
+    }
     this.logger.log(
       `sap query ${action} key=${entry.key} version=${nextVersionNo} epoch=${this.configEpoch}`,
     );

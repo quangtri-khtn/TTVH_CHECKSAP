@@ -24,7 +24,7 @@ import {
   todayInVietnam,
 } from '../lib/sales-monitor';
 import { MONITOR_DEFAULT_BRAND, MONITOR_DEFAULT_DATE } from '../lib/sap-constants';
-import { assertSapBrand, assertSapDate } from '../lib/sap-query-params';
+import { assertSapBrand, assertSapDateRange } from '../lib/sap-query-params';
 import type { SapQueryResult } from '../lib/sap-row-normalizer';
 import type {
   SalesChainQueryKey,
@@ -110,16 +110,18 @@ export class SapSalesMonitorService {
    */
   async getSalesMonitor(query: GetSalesMonitorQueryDto): Promise<SalesMonitorDataDto> {
     const dateFrom = query.dateFrom ?? MONITOR_DEFAULT_DATE;
+    const dateTo = query.dateTo || todayInVietnam().replaceAll('-', '');
     const rawBrand = query.brand ?? MONITOR_DEFAULT_BRAND;
-    const brand = rawBrand.toUpperCase() === 'ALL' ? 'ALL' : rawBrand;
+    const brand =
+      rawBrand.trim().toUpperCase() === 'ALL' ? '' : rawBrand.trim();
     const refresh = Boolean(query.refresh);
 
-    assertSapDate(dateFrom);
+    assertSapDateRange(dateFrom, dateTo);
     assertSapBrand(brand);
 
     const currentEpoch = this.gateway.getPoolEpoch();
     const currentConfigEpoch = this.getCombinedConfigEpoch();
-    const cacheKey = `${dateFrom}:${brand}`;
+    const cacheKey = `${dateFrom}:${dateTo}:${brand}`;
     const inFlightKey = `${currentEpoch}:${currentConfigEpoch}:${cacheKey}`;
 
     if (refresh) {
@@ -152,7 +154,7 @@ export class SapSalesMonitorService {
       }
     }
 
-    const execPromise = this.executeFetch(dateFrom, brand);
+    const execPromise = this.executeFetch(dateFrom, dateTo, brand);
     this.inFlight.set(inFlightKey, execPromise);
 
     try {
@@ -201,16 +203,19 @@ export class SapSalesMonitorService {
 
   private async executeFetch(
     dateFrom: string,
+    dateTo: string,
     brand: string,
   ): Promise<SalesMonitorDataDto> {
     const startedAt = Date.now();
     let queryCount = 0;
     const today = todayInVietnam();
-    const activeStoreCodes = await this.storeService.getActiveStoreCodes(brand, 'sales');
-    const shouldFilter = activeStoreCodes.size > 0;
-    if (!shouldFilter) {
+    const activeStoreCodes = await this.storeService.getActiveStoreCodes(
+      brand || 'ALL',
+      'sales',
+    );
+    if (activeStoreCodes.size === 0) {
       this.logger.warn(
-        `[SapSalesMonitorService] Brand ${brand} has no active sales stores configured. Falling back to all stores.`,
+        `[SapSalesMonitorService] Brand ${brand || 'ALL'} has no active sales stores configured. Returning empty results.`,
       );
     }
     const querySnapshot = await this.queryConfigService.getSnapshot();
@@ -220,14 +225,24 @@ export class SapSalesMonitorService {
       querySnapshot,
       dateFrom,
       brand,
+      dateTo,
     );
     const rawListResults = {} as Record<SalesListQueryKey, SapQueryResult>;
     for (const key of SALES_LIST_ORDER) {
-      rawListResults[key] = await this.gateway.run(
-        `sales-list:${key}`,
-        listQueries[key],
-      );
+      const res = await this.gateway.run(`sales-list:${key}`, listQueries[key]);
       queryCount++;
+      const storeIdx = res.columns.indexOf('Store');
+      rawListResults[key] = {
+        columns: res.columns,
+        rows:
+          storeIdx >= 0
+            ? res.rows.filter((r) =>
+                activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
+              )
+            : activeStoreCodes.size === 0
+              ? []
+              : res.rows,
+      };
     }
 
     // Bước 2: Chạy tuần tự 5 câu truy vấn chuỗi nhóm mới
@@ -235,14 +250,32 @@ export class SapSalesMonitorService {
       querySnapshot,
       dateFrom,
       brand,
+      undefined,
+      dateTo,
     );
     const chainResults = {} as Record<SalesChainQueryKey, SapQueryResult>;
     for (const key of SALES_CHAIN_ORDER) {
-      chainResults[key] = await this.gateway.run(
+      const res = await this.gateway.run(
         `sales-chain:${key}`,
         chainQueries[key],
       );
       queryCount++;
+      if (key === 'po') {
+        const storeIdx = res.columns.indexOf('Store');
+        chainResults[key] = {
+          columns: res.columns,
+          rows:
+            storeIdx >= 0
+              ? res.rows.filter((r) =>
+                  activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
+                )
+              : activeStoreCodes.size === 0
+                ? []
+                : res.rows,
+        };
+      } else {
+        chainResults[key] = res;
+      }
     }
 
     // Bước 3: Gom PO nhóm cũ và chia lô tối đa 300 PO/lô
@@ -263,6 +296,7 @@ export class SapSalesMonitorService {
         dateFrom,
         brand,
         chunk,
+        dateTo,
       );
       for (const key of SALES_CHAIN_ORDER) {
         const chunkRes = await this.gateway.run(
@@ -276,36 +310,31 @@ export class SapSalesMonitorService {
           `sales-chain-old:${key}:${i}`,
           this.logger,
         );
+        const chunkStoreIdx =
+          key === 'po' ? chunkRes.columns.indexOf('Store') : -1;
         for (const row of chunkRes.rows) {
+          if (
+            key === 'po' &&
+            chunkStoreIdx >= 0 &&
+            !activeStoreCodes.has(String(row[chunkStoreIdx] ?? '').trim())
+          ) {
+            continue;
+          }
           chainResults[key].rows.push(row);
         }
       }
     }
 
-    // Bước 4: Lọc theo cửa hàng active (in-memory Set<string>) và gọi Pure Domain Logic
-    if (shouldFilter) {
-      for (const key of SALES_LIST_ORDER) {
-        const storeIdx = rawListResults[key].columns.indexOf('Store');
-        if (storeIdx >= 0) {
-          rawListResults[key] = {
-            columns: rawListResults[key].columns,
-            rows: rawListResults[key].rows.filter((r) =>
-              activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
-            ),
-          };
-        }
-      }
-    }
-
+    // Bước 4: Gắn Nhom và dựng chuỗi chứng từ trên tập cửa hàng active
     const listResults = tagCohort(rawListResults, dateFrom);
     const { rows: rawChainRows, columns: chainColumns } = assemblePoChain(
       chainResults,
       dateFrom,
       today,
     );
-    const chainRows = shouldFilter
-      ? rawChainRows.filter((r) => activeStoreCodes.has(String(r['Store'] ?? '').trim()))
-      : rawChainRows;
+    const chainRows = rawChainRows.filter((r) =>
+      activeStoreCodes.has(String(r['Store'] ?? '').trim()),
+    );
     const chainTable = recordsToTable(chainColumns, chainRows);
     const { chainAr, chainGrpo } = buildChainArAndGrpo(chainResults, chainRows);
     const overviewTable = buildMonitorOverview(listResults);
@@ -352,6 +381,7 @@ export class SapSalesMonitorService {
     return {
       meta: {
         dateFrom,
+        dateTo,
         brand,
         today,
         generatedAt: new Date().toISOString(),

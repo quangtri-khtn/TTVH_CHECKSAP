@@ -4,12 +4,14 @@ import { SapStoreService } from './sap-store.service';
 describe('SapStoreService', () => {
   const createMocks = () => {
     const prisma = {
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
       sapStore: {
         findMany: jest.fn(),
         count: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
         upsert: jest.fn(),
+        updateMany: jest.fn(),
       },
       sapBrand: {
         upsert: jest.fn(),
@@ -46,17 +48,19 @@ describe('SapStoreService', () => {
       expect(returnSet.size).toBe(0);
     });
 
-    it('khi brandCode=ALL (Phương án A): lấy kho active của brand đã cấu hình và fallback lấy toàn bộ kho của brand chưa bật kho active nào', async () => {
+    it('khi brandCode=ALL: chỉ trả về đúng các kho đang bật (không tự bật lại các brand đã tắt)', async () => {
       const { prisma, service } = createMocks();
       prisma.sapStore.findMany.mockResolvedValue([
-        { code: 'MC001', brandCode: '5001', isActiveSales: true, isActiveReturn: true },
-        { code: 'MC002', brandCode: '5001', isActiveSales: false, isActiveReturn: false },
-        { code: 'CK001', brandCode: '5004', isActiveSales: false, isActiveReturn: false },
-        { code: 'CK002', brandCode: '5004', isActiveSales: false, isActiveReturn: false },
+        { code: 'MC001' },
+        { code: 'MC002' },
       ]);
 
       const allSalesSet = await service.getActiveStoreCodes('ALL', 'sales');
-      expect([...allSalesSet]).toEqual(['MC001', 'CK001', 'CK002']);
+      expect(prisma.sapStore.findMany).toHaveBeenCalledWith({
+        where: { isActiveSales: true },
+        select: { code: true },
+      });
+      expect([...allSalesSet]).toEqual(['MC001', 'MC002']);
     });
   });
 
@@ -98,6 +102,60 @@ describe('SapStoreService', () => {
       });
       expect(res.isActiveSales).toBe(true);
       expect(res.brandName).toBe('Maycha');
+      expect(service.getConfigEpoch()).toBe(epochBefore + 1);
+    });
+  });
+
+  describe('bulkUpdateByBrand', () => {
+    it('khi isActive=true: bật các kho sapInactive=false của đúng brandCode, tắt kho sapInactive=true và tăng configEpoch', async () => {
+      const { prisma, service } = createMocks();
+      prisma.sapStore.updateMany
+        .mockResolvedValueOnce({ count: 84 })
+        .mockResolvedValueOnce({ count: 11 });
+
+      const epochBefore = service.getConfigEpoch();
+      const res = await service.bulkUpdateByBrand({
+        brandCode: '5001',
+        isActive: true,
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.sapStore.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { brandCode: '5001', sapInactive: false },
+        data: { isActiveSales: true, isActiveReturn: true },
+      });
+      expect(prisma.sapStore.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { brandCode: '5001', sapInactive: true },
+        data: { isActiveSales: false, isActiveReturn: false },
+      });
+      expect(res).toEqual({
+        brandCode: '5001',
+        isActive: true,
+        updatedCount: 84,
+      });
+      expect(service.getConfigEpoch()).toBe(epochBefore + 1);
+    });
+
+    it('khi isActive=false: tắt toàn bộ kho thuộc đúng brandCode và tăng configEpoch', async () => {
+      const { prisma, service } = createMocks();
+      prisma.sapStore.updateMany.mockResolvedValueOnce({ count: 130 });
+
+      const epochBefore = service.getConfigEpoch();
+      const res = await service.bulkUpdateByBrand({
+        brandCode: '5002',
+        isActive: false,
+      });
+
+      expect(prisma.sapStore.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.sapStore.updateMany).toHaveBeenCalledWith({
+        where: { brandCode: '5002' },
+        data: { isActiveSales: false, isActiveReturn: false },
+      });
+      expect(res).toEqual({
+        brandCode: '5002',
+        isActive: false,
+        updatedCount: 130,
+      });
       expect(service.getConfigEpoch()).toBe(epochBefore + 1);
     });
   });

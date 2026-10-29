@@ -1,10 +1,10 @@
 import { RET_AR_NOINV_COLS, RET_CHAIN_COLUMNS } from '../lib/return-monitor';
 import { SapReturnMonitorService } from './sap-return-monitor.service';
 
-describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Column Passthrough)', () => {
+describe('SapReturnMonitorService (Frozen Snapshot, 5 old_sos Queries, 150 SO Batch & Extra Column Passthrough)', () => {
   const createMocks = (
     activeStores: string[] = ['MC073'],
-    extraPoCols: string[] = [],
+    extraSoCols: string[] = [],
     extraArCols: string[] = [],
   ) => {
     let storeConfigEpoch = 0;
@@ -13,49 +13,68 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
     const gateway = {
       getPoolEpoch: jest.fn(() => 1),
       run: jest.fn(async (key: string) => {
-        if (key === 'return-list:po') {
+        if (key === 'return-list:so') {
           return {
             columns: [
-              'PO Number',
-              'PO DocDate',
-              'PO CreateDate',
+              'SO Number',
+              'SO DocDate',
+              'SO CreateDate',
+              'SO Canceled',
               'Store',
               'Brand',
               'MC Docnum',
-              'Kho PO min',
-              'Kho PO max',
-              ...extraPoCols,
+              'SO ShipDate',
+              'Kho SO min',
+              'Kho SO max',
+              ...extraSoCols,
             ],
             rows: [
               [
-                4001,
+                5001,
                 '2026-10-10',
                 '2026-10-10',
+                'N',
                 'MC073',
                 '5001',
                 'MC073-001',
-                'DC001',
-                'DC001',
-                ...extraPoCols.map((c) => `po-${c}-4001`),
+                '2026-10-12',
+                'MC073',
+                'MC073',
+                ...extraSoCols.map((c) => `so-${c}-5001`),
               ],
               [
-                4002,
+                5002,
                 '2026-10-10',
                 '2026-10-10',
+                'N',
                 'MC999',
                 '5001',
                 'MC999-001',
-                'DC001',
-                'DC001',
-                ...extraPoCols.map((c) => `po-${c}-4002`),
+                '2026-10-12',
+                'MC999',
+                'MC999',
+                ...extraSoCols.map((c) => `so-${c}-5002`),
               ],
             ],
+          };
+        }
+        if (key === 'return-list:po') {
+          return {
+            columns: [
+              'SO Number',
+              'PO Number',
+              'PO DocDate',
+              'PO CreateDate',
+              'Kho PO min',
+              'Kho PO max',
+            ],
+            rows: [[5001, 4001, '2026-10-10', '2026-10-10', 'DC001', 'DC001']],
           };
         }
         if (key === 'return-list:ar') {
           return {
             columns: [
-              'PO Number',
+              'SO Number',
               'AR Number',
               'AR DocDate',
               'AR CreateDate',
@@ -65,7 +84,7 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
             ],
             rows: [
               [
-                4001,
+                5001,
                 8001,
                 '2026-10-11',
                 '2026-10-11',
@@ -86,7 +105,7 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
             ],
           };
         }
-        return { columns: ['PO Number'], rows: [] };
+        return { columns: ['SO Number'], rows: [] };
       }),
     };
 
@@ -111,8 +130,8 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       },
       getSnapshot: jest.fn(async () => snapshot),
       buildReturnMainSqlMap: jest.fn(() => ({
-        po: 'sql:ret_po',
         so: 'sql:ret_so',
+        po: 'sql:ret_po',
         do: 'sql:ret_do',
         ar: 'sql:ret_ar',
         grpo: 'sql:ret_grpo',
@@ -120,11 +139,11 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
         whs: 'sql:ret_whs',
       })),
       buildReturnOldDiscoverySqlMap: jest.fn(() => ({
-        ret_old_1: 'sql:ret_old_1',
-        ret_old_2: 'sql:ret_old_2',
-        ret_old_3: 'sql:ret_old_3',
-        ret_old_4: 'sql:ret_old_4',
-        ret_old_5: 'sql:ret_old_5',
+        old_sos_1: 'sql:old_sos_1',
+        old_sos_2: 'sql:old_sos_2',
+        old_sos_3: 'sql:old_sos_3',
+        old_sos_4: 'sql:old_sos_4',
+        old_sos_5: 'sql:old_sos_5',
       })),
     };
 
@@ -136,13 +155,14 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
     return { gateway, storeService, queryConfigService, snapshot, service };
   };
 
-  it('lọc bỏ các kho không nằm trong activeStoreCodes và chạy tuần tự 5 câu ret_old_1..5', async () => {
+  it('lọc bỏ các kho không nằm trong activeStoreCodes và chạy tuần tự 5 câu old_sos_1..5', async () => {
     const { gateway, queryConfigService, snapshot, service } = createMocks([
       'MC073',
     ]);
 
     const res = await service.getReturnMonitor({
       dateFrom: '20261007',
+      dateTo: '20261028',
       brand: '5001',
     });
 
@@ -151,16 +171,17 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       snapshot,
       '20261007',
       '5001',
+      '20261028',
     );
-    // 7 main queries + 5 ret_old_1..5 queries = 12 queries when oldPoSet is empty
+    // 7 main queries + 5 old_sos_1..5 queries = 12 queries when oldSoSet is empty
     expect(res.meta.queryCount).toBe(12);
     expect(gateway.run).toHaveBeenCalledWith(
-      'return-candidates:ret_old_1',
-      'sql:ret_old_1',
+      'return-candidates:old_sos_1',
+      'sql:old_sos_1',
     );
     expect(gateway.run).toHaveBeenCalledWith(
-      'return-candidates:ret_old_5',
-      'sql:ret_old_5',
+      'return-candidates:old_sos_5',
+      'sql:old_sos_5',
     );
     expect(res.cohorts.tatCa.poCount).toBe(1);
     expect(res.lists.chain.columns).toEqual([...RET_CHAIN_COLUMNS]);
@@ -168,7 +189,7 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
     expect(res.lists.chain.rows[0][1]).toBe('MC073');
   });
 
-  it('fallback giữ nguyên toàn bộ kho khi activeStoreCodes rỗng (Set.size === 0)', async () => {
+  it('trả về danh sách rỗng khi activeStoreCodes rỗng (Set.size === 0)', async () => {
     const { service } = createMocks([]);
 
     const res = await service.getReturnMonitor({
@@ -176,42 +197,47 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       brand: '5001',
     });
 
-    expect(res.cohorts.tatCa.poCount).toBe(2);
-    expect(res.lists.chain.rows).toHaveLength(2);
+    expect(res.cohorts.tatCa.poCount).toBe(0);
+    expect(res.lists.chain.rows).toHaveLength(0);
+    expect(res.lists.arNoInv.rows).toHaveLength(0);
   });
 
-  it('gom PO cũ từ 5 câu ret_old_1..5 (bỏ qua PO đã thuộc nhóm mới) và passthrough cột phụ trên chain + arNoInv', async () => {
+  it('gom SO cũ từ 5 câu old_sos_1..5 (bỏ qua SO đã thuộc nhóm mới) và passthrough cột phụ trên chain + arNoInv', async () => {
     const { gateway, queryConfigService, snapshot, service } = createMocks(
       ['MC073'],
-      ['Ghi chú PO'],
+      ['Ghi chú SO'],
       ['Kênh HĐ'],
     );
 
     gateway.run.mockImplementation(async (key: string) => {
-      if (key === 'return-list:po') {
+      if (key === 'return-list:so') {
         return {
           columns: [
-            'PO Number',
-            'PO DocDate',
-            'PO CreateDate',
+            'SO Number',
+            'SO DocDate',
+            'SO CreateDate',
+            'SO Canceled',
             'Store',
             'Brand',
             'MC Docnum',
-            'Kho PO min',
-            'Kho PO max',
-            'Ghi chú PO',
+            'SO ShipDate',
+            'Kho SO min',
+            'Kho SO max',
+            'Ghi chú SO',
           ],
           rows: [
             [
-              4001,
+              5001,
               '2026-10-10',
               '2026-10-10',
+              'N',
               'MC073',
               '5001',
               'MC073-001',
-              'DC001',
-              'DC001',
-              'PO Mới',
+              '2026-10-12',
+              'MC073',
+              'MC073',
+              'SO Mới',
             ],
           ],
         };
@@ -219,7 +245,7 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       if (key === 'return-list:ar') {
         return {
           columns: [
-            'PO Number',
+            'SO Number',
             'AR Number',
             'AR DocDate',
             'AR CreateDate',
@@ -228,46 +254,50 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
             'Kênh HĐ',
           ],
           rows: [
-            [4001, 8001, '2026-10-11', '2026-10-11', '2026-10-12', null, 'E-Inv'],
+            [5001, 8001, '2026-10-11', '2026-10-11', '2026-10-12', null, 'E-Inv'],
           ],
         };
       }
-      if (key === 'return-candidates:ret_old_1') {
+      if (key === 'return-candidates:old_sos_1') {
         return {
-          columns: ['PO Number'],
-          rows: [[4001], [3500]],
+          columns: ['SO Number'],
+          rows: [[5001], [3500]],
         };
       }
-      if (key === 'return-candidates:ret_old_3') {
+      if (key === 'return-candidates:old_sos_3') {
         return {
-          columns: ['PO Number'],
+          columns: ['SO Number'],
           rows: [[3500], [3499]],
         };
       }
-      if (key === 'return-old:po:0') {
+      if (key === 'return-old:so:0') {
         return {
           columns: [
-            'PO Number',
-            'PO DocDate',
-            'PO CreateDate',
+            'SO Number',
+            'SO DocDate',
+            'SO CreateDate',
+            'SO Canceled',
             'Store',
             'Brand',
             'MC Docnum',
-            'Kho PO min',
-            'Kho PO max',
-            'Ghi chú PO',
+            'SO ShipDate',
+            'Kho SO min',
+            'Kho SO max',
+            'Ghi chú SO',
           ],
           rows: [
             [
               3499,
               '2026-10-01',
               '2026-10-01',
+              'N',
               'MC073',
               '5001',
               'MC073-OLD',
-              'DC001',
-              'DC001',
-              'PO Cũ 3499',
+              '2026-10-05',
+              'MC073',
+              'MC073',
+              'SO Cũ 3499',
             ],
           ],
         };
@@ -275,7 +305,7 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       if (key === 'return-old:ar:0') {
         return {
           columns: [
-            'PO Number',
+            'SO Number',
             'AR Number',
             'AR DocDate',
             'AR CreateDate',
@@ -286,11 +316,12 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
           rows: [],
         };
       }
-      return { columns: ['PO Number'], rows: [] };
+      return { columns: ['SO Number'], rows: [] };
     });
 
     const res = await service.getReturnMonitor({
       dateFrom: '20261007',
+      dateTo: '20261028',
       brand: '5001',
     });
 
@@ -299,22 +330,23 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
       '20261007',
       '5001',
       [3499, 3500],
+      '20261028',
     );
     expect(res.lists.chain.columns).toEqual([
       ...RET_CHAIN_COLUMNS,
-      'Ghi chú PO',
+      'Ghi chú SO',
     ]);
     expect(res.lists.chain.rows).toHaveLength(2);
-    expect(res.lists.chain.rows[0]?.[28]).toBe('PO Cũ 3499');
-    expect(res.lists.chain.rows[1]?.[28]).toBe('PO Mới');
+    expect(res.lists.chain.rows[0]?.[31]).toBe('SO Cũ 3499');
+    expect(res.lists.chain.rows[1]?.[31]).toBe('SO Mới');
     expect(res.lists.arNoInv.columns).toEqual([
       ...RET_AR_NOINV_COLS,
       'Kênh HĐ',
     ]);
-    expect(res.lists.arNoInv.rows[0]?.[15]).toBe('E-Inv');
+    expect(res.lists.arNoInv.rows[0]?.[19]).toBe('E-Inv');
   });
 
-  it('tự động vô hiệu hóa cache 60s khi configEpoch của SapStoreService hoặc SapQueryConfigService tăng và chặn lệch cột lô 300 PO cũ', async () => {
+  it('tự động vô hiệu hóa cache 60s khi configEpoch của SapStoreService hoặc SapQueryConfigService tăng và chặn lệch cột lô 150 SO cũ', async () => {
     const { gateway, storeService, queryConfigService, service } = createMocks([
       'MC073',
     ]);
@@ -340,16 +372,16 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
 
     queryConfigService.bumpEpoch();
     gateway.run.mockImplementation(async (key: string) => {
-      if (key === 'return-candidates:ret_old_1') {
-        return { columns: ['PO Number'], rows: [[3000]] };
+      if (key === 'return-candidates:old_sos_1') {
+        return { columns: ['SO Number'], rows: [[3000]] };
       }
-      if (key === 'return-old:po:0') {
+      if (key === 'return-old:so:0') {
         return {
-          columns: ['PO Number', 'Mismatched Col'],
+          columns: ['SO Number', 'Mismatched Col'],
           rows: [[3000, 'X']],
         };
       }
-      return { columns: ['PO Number'], rows: [] };
+      return { columns: ['SO Number'], rows: [] };
     });
 
     await expect(
@@ -357,6 +389,6 @@ describe('SapReturnMonitorService (Frozen Snapshot, 5 ret_old Queries & Extra Co
         dateFrom: '20261007',
         brand: '5001',
       }),
-    ).rejects.toThrow(/Lệch cấu trúc cột khi nối lô PO cũ/);
+    ).rejects.toThrow(/Lệch cấu trúc cột khi nối lô SO cũ/);
   });
 });

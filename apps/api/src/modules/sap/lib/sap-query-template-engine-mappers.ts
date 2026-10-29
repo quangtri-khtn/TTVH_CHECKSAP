@@ -91,6 +91,7 @@ export interface SapQueryDefRowShape {
   baselineColumns: string[];
   dedupKeys: string[];
   supportsExtraColumns: boolean;
+  autoDateUpper?: boolean;
   defaultSql: string;
   currentVersionNo: number;
   lastTestedSqlHash: string | null;
@@ -132,12 +133,18 @@ export function buildSalesListSqlMapFromSnapshot(
   snapshot: SapQuerySnapshot,
   dateFrom: string,
   brand: string,
+  dateTo?: string,
 ): Record<SalesListQueryKey, OpenQuerySql> {
   const map = {} as Record<SalesListQueryKey, OpenQuerySql>;
   for (const key of SAP_SALES_LIST_QUERY_KEYS) {
-    const sqlText =
-      snapshot.sqlByKey.get(key) ?? SAP_QUERY_CATALOG_BY_KEY[key].defaultSql;
-    map[key] = renderCatalogSql(sqlText, { dateFrom, brand });
+    const entry = SAP_QUERY_CATALOG_BY_KEY[key];
+    const sqlText = snapshot.sqlByKey.get(key) ?? entry.defaultSql;
+    map[key] = renderCatalogSql(sqlText, {
+      dateFrom,
+      dateTo,
+      brand,
+      autoDateUpper: entry.autoDateUpper,
+    });
   }
   return map;
 }
@@ -147,13 +154,19 @@ export function buildSalesChainSqlMapFromSnapshot(
   dateFrom: string,
   brand: string,
   poNumbers?: readonly number[],
+  dateTo?: string,
 ): SalesChainSqlMap {
   const map = {} as SalesChainSqlMap;
   for (const catalogKey of SAP_SALES_CHAIN_QUERY_KEYS) {
-    const sqlText =
-      snapshot.sqlByKey.get(catalogKey) ??
-      SAP_QUERY_CATALOG_BY_KEY[catalogKey].defaultSql;
-    const rendered = renderCatalogSql(sqlText, { dateFrom, brand, poNumbers });
+    const entry = SAP_QUERY_CATALOG_BY_KEY[catalogKey];
+    const sqlText = snapshot.sqlByKey.get(catalogKey) ?? entry.defaultSql;
+    const rendered = renderCatalogSql(sqlText, {
+      dateFrom,
+      dateTo,
+      brand,
+      autoDateUpper: entry.autoDateUpper,
+      poNumbers,
+    });
     map[catalogKey] = rendered;
     map[SALES_CHAIN_KEY_TO_LEGACY[catalogKey]] = rendered;
   }
@@ -164,14 +177,20 @@ export function buildReturnMainSqlMapFromSnapshot(
   snapshot: SapQuerySnapshot,
   dateFrom: string,
   brand: string,
-  poNumbers?: readonly number[],
+  soNumbers?: readonly number[],
+  dateTo?: string,
 ): ReturnMainSqlMap {
   const map = {} as ReturnMainSqlMap;
   for (const catalogKey of SAP_RETURN_MAIN_QUERY_KEYS) {
-    const sqlText =
-      snapshot.sqlByKey.get(catalogKey) ??
-      SAP_QUERY_CATALOG_BY_KEY[catalogKey].defaultSql;
-    const rendered = renderCatalogSql(sqlText, { dateFrom, brand, poNumbers });
+    const entry = SAP_QUERY_CATALOG_BY_KEY[catalogKey];
+    const sqlText = snapshot.sqlByKey.get(catalogKey) ?? entry.defaultSql;
+    const rendered = renderCatalogSql(sqlText, {
+      dateFrom,
+      dateTo,
+      brand,
+      autoDateUpper: entry.autoDateUpper,
+      soNumbers,
+    });
     map[catalogKey] = rendered;
     map[RETURN_MAIN_KEY_TO_LEGACY[catalogKey]] = rendered;
   }
@@ -182,26 +201,34 @@ export function buildReturnOldDiscoverySqlMapFromSnapshot(
   snapshot: SapQuerySnapshot,
   dateFrom: string,
   brand: string,
+  dateTo?: string,
 ): Record<SapReturnOldCatalogKey, OpenQuerySql> {
   const map = {} as Record<SapReturnOldCatalogKey, OpenQuerySql>;
   for (const key of SAP_RETURN_OLD_QUERY_KEYS) {
-    const sqlText =
-      snapshot.sqlByKey.get(key) ?? SAP_QUERY_CATALOG_BY_KEY[key].defaultSql;
-    map[key] = renderCatalogSql(sqlText, { dateFrom, brand });
+    const entry = SAP_QUERY_CATALOG_BY_KEY[key];
+    const sqlText = snapshot.sqlByKey.get(key) ?? entry.defaultSql;
+    map[key] = renderCatalogSql(sqlText, {
+      dateFrom,
+      dateTo,
+      brand,
+      autoDateUpper: entry.autoDateUpper,
+    });
   }
   return map;
 }
 
 export function toSapQuerySummaryDto(
   row: SapQueryDefRowShape,
-  activeSqlByKey: ReadonlyMap<SapQueryKey, string>,
+  activeSqlByKey: Map<SapQueryKey, string>,
 ): SapQuerySummaryDto {
   const queryKey = row.key as SapQueryKey;
-  const activeSql =
-    activeSqlByKey.get(queryKey) ?? normalizeSqlText(row.defaultSql);
+  const normalizedDefault = normalizeSqlText(row.defaultSql);
+  if (row.currentVersionNo === 1) {
+    activeSqlByKey.set(queryKey, normalizedDefault);
+  }
+  const activeSql = activeSqlByKey.get(queryKey) ?? normalizedDefault;
   const activeSqlHash = computeSqlHash(activeSql);
-  const defaultSqlHash = computeSqlHash(row.defaultSql);
-
+  const defaultSqlHash = computeSqlHash(normalizedDefault);
   return {
     key: row.key,
     flow: row.flow as 'ban' | 'tra',
@@ -215,6 +242,10 @@ export function toSapQuerySummaryDto(
     baselineColumns: row.baselineColumns,
     dedupKeys: row.dedupKeys,
     supportsExtraColumns: row.supportsExtraColumns,
+    autoDateUpper:
+      row.autoDateUpper ??
+      SAP_QUERY_CATALOG_BY_KEY[queryKey]?.autoDateUpper ??
+      true,
     currentVersionNo: row.currentVersionNo,
     isCustomized: activeSqlHash !== defaultSqlHash,
     activeSqlHash,
@@ -230,13 +261,18 @@ export function toSapQuerySummaryDto(
 
 export function toSapQueryDetailDto(
   row: SapQueryDetailRowShape,
-  activeSqlByKey: ReadonlyMap<SapQueryKey, string>,
+  activeSqlByKey: Map<SapQueryKey, string>,
 ): SapQueryDetailDto {
+  const queryKey = row.key as SapQueryKey;
+  const currentVer = row.versions.find(
+    (v) => v.versionNo === row.currentVersionNo,
+  );
+  if (currentVer) {
+    activeSqlByKey.set(queryKey, normalizeSqlText(currentVer.sqlText));
+  }
   const summary = toSapQuerySummaryDto(row, activeSqlByKey);
   const activeSql =
-    activeSqlByKey.get(row.key as SapQueryKey) ??
-    normalizeSqlText(row.defaultSql);
-
+    activeSqlByKey.get(queryKey) ?? normalizeSqlText(row.defaultSql);
   return {
     ...summary,
     activeSql,
@@ -307,6 +343,48 @@ export function buildStaticFailedReviewDto(
   };
 }
 
+export function filterReviewQueryResultByActiveStores(
+  entry: SapQueryCatalogEntry,
+  queryResult: SapQueryResult,
+  activeStoreCodes: ReadonlySet<string> | null,
+): SapQueryResult {
+  if (!activeStoreCodes) {
+    return queryResult;
+  }
+  if (activeStoreCodes.size === 0) {
+    return {
+      columns: queryResult.columns,
+      rows: [],
+    };
+  }
+  if (entry.key === 'ret_whs') {
+    const dbIdx = queryResult.columns.indexOf('DB');
+    const whsIdx = queryResult.columns.indexOf('WhsCode');
+    if (dbIdx >= 0 && whsIdx >= 0) {
+      return {
+        columns: queryResult.columns,
+        rows: queryResult.rows.filter((r) => {
+          const db = String(r[dbIdx] ?? '').trim();
+          return (
+            db !== 'T' || activeStoreCodes.has(String(r[whsIdx] ?? '').trim())
+          );
+        }),
+      };
+    }
+    return queryResult;
+  }
+  const storeIdx = queryResult.columns.indexOf('Store');
+  if (storeIdx >= 0) {
+    return {
+      columns: queryResult.columns,
+      rows: queryResult.rows.filter((r) =>
+        activeStoreCodes.has(String(r[storeIdx] ?? '').trim()),
+      ),
+    };
+  }
+  return queryResult;
+}
+
 export function buildLiveReviewResultDto(
   staticRes: StaticValidationResult,
   colDiff: ColumnDiffResult,
@@ -364,6 +442,7 @@ export function buildCatalogMetadataPayload(
     baselineColumns: [...entry.baselineColumns],
     dedupKeys: [...entry.dedupKeys],
     supportsExtraColumns: entry.supportsExtraColumns,
+    autoDateUpper: entry.autoDateUpper,
     defaultSql: normalizedDefault,
   };
 }
@@ -377,7 +456,6 @@ export async function syncCatalogWithPrisma(
     include: { versions: true },
   });
   const existingByKey = new Map(existingDefs.map((d) => [d.key, d]));
-
   for (const entry of SAP_QUERY_CATALOG) {
     const normalizedDefault = normalizeSqlText(entry.defaultSql);
     const defaultHash = computeSqlHash(normalizedDefault);
@@ -415,7 +493,30 @@ export async function syncCatalogWithPrisma(
       (v) => v.versionNo === existing.currentVersionNo,
     );
     if (activeVersion) {
-      activeSqlByKey.set(entry.key, normalizeSqlText(activeVersion.sqlText));
+      const isSeedV1 =
+        existing.currentVersionNo === 1 &&
+        (activeVersion.createdBy === 'System Seed' ||
+          activeVersion.createdBy === 'system-seed');
+      if (isSeedV1 && normalizeSqlText(activeVersion.sqlText) !== normalizedDefault) {
+        await prisma.sapQueryVersion.upsert({
+          where: { queryKey_versionNo: { queryKey: entry.key, versionNo: 1 } },
+          update: {
+            sqlText: normalizedDefault,
+            sqlHash: defaultHash,
+          },
+          create: {
+            queryKey: entry.key,
+            versionNo: 1,
+            sqlText: normalizedDefault,
+            sqlHash: defaultHash,
+            changeNote: 'Khởi tạo câu truy vấn gốc chuẩn (Seed v1)',
+            createdBy: 'System Seed',
+          },
+        });
+        activeSqlByKey.set(entry.key, normalizedDefault);
+      } else {
+        activeSqlByKey.set(entry.key, normalizeSqlText(activeVersion.sqlText));
+      }
       activeVersionByKey.set(entry.key, existing.currentVersionNo);
     } else {
       await prisma.sapQueryVersion.upsert({

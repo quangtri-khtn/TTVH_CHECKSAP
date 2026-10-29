@@ -1,6 +1,6 @@
-// Danh mục chuẩn 25 câu truy vấn SAP HANA (Full SQL trải phẳng) chia theo 2 Tab:
+// Danh mục chuẩn 25 câu truy vấn SAP HANA (Full SQL trải phẳng) chia theo 2 Tab (Đặc tả v1.1 – 28/10/2026):
 // - Tab 1 (flow = 'ban', 13 câu): 8 câu danh sách (list) + 5 câu ghép chuỗi PO (chain)
-// - Tab 2 (flow = 'tra', 12 câu): 7 câu ghép chuỗi trả hàng & kho (main) + 5 câu tìm PO cũ (old_discovery)
+// - Tab 2 (flow = 'tra', 12 câu): 7 câu ghép chuỗi SO trả hàng & kho (main) + 5 câu tìm SO cũ (old_discovery)
 
 export type SapQueryFlow = 'ban' | 'tra';
 export type SapQueryStage = 'list' | 'chain' | 'main' | 'old_discovery';
@@ -8,7 +8,7 @@ export type SapRuntimePlaceholder =
   | '{d}'
   | '{br}'
   | '{po_filter}'
-  | '{brand}'
+  | '{brand_cond}'
   | '{date_cond}';
 
 export const SAP_SALES_LIST_QUERY_KEYS = [
@@ -31,8 +31,8 @@ export const SAP_SALES_CHAIN_QUERY_KEYS = [
 ] as const;
 
 export const SAP_RETURN_MAIN_QUERY_KEYS = [
-  'ret_po',
   'ret_so',
+  'ret_po',
   'ret_do',
   'ret_ar',
   'ret_grpo',
@@ -41,11 +41,11 @@ export const SAP_RETURN_MAIN_QUERY_KEYS = [
 ] as const;
 
 export const SAP_RETURN_OLD_QUERY_KEYS = [
-  'ret_old_1',
-  'ret_old_2',
-  'ret_old_3',
-  'ret_old_4',
-  'ret_old_5',
+  'old_sos_1',
+  'old_sos_2',
+  'old_sos_3',
+  'old_sos_4',
+  'old_sos_5',
 ] as const;
 
 export const SAP_QUERY_KEYS = [
@@ -74,9 +74,9 @@ export interface SapQueryCatalogEntry {
   readonly baselineColumns: readonly string[];
   readonly dedupKeys: readonly string[];
   readonly supportsExtraColumns: boolean;
+  readonly autoDateUpper: boolean;
   readonly defaultSql: string;
 }
-
 export const SAP_QUERY_CATALOG: readonly SapQueryCatalogEntry[] = [
   // =========================================================================
   // TAB 1: MONITOR LUỒNG BÁN — NHÓM 1A: DANH SÁCH & CẢNH BÁO TREO (#01..#08)
@@ -95,6 +95,7 @@ export const SAP_QUERY_CATALOG: readonly SapQueryCatalogEntry[] = [
     baselineColumns: ['Store', 'Ten cua hang', 'PO', 'SO'],
     dedupKeys: ['Store'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     defaultSql: `SELECT "Store", "Ten cua hang", SUM("PO") AS "PO", SUM("SO") AS "SO" FROM (
  SELECT P."U_Store" AS "Store", W."WhsName" AS "Ten cua hang", 1 AS "PO", 0 AS "SO"
  FROM maycha_live.OPOR P {br}
@@ -129,6 +130,7 @@ export const SAP_QUERY_CATALOG: readonly SapQueryCatalogEntry[] = [
     ],
     dedupKeys: ['PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", P."DocNum" AS "PO Number", P."DocDate", P."CreateDate" AS "PO CreateDate", P."DocStatus" AS "PO Status",
  COUNT(*) AS "So dong PO",
  CASE WHEN MAX(CASE WHEN S."DocNum" IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'SO da bi huy' ELSE 'Chua co SO' END AS "Ly do"
@@ -177,6 +179,7 @@ ORDER BY P."DocDate", P."DocNum"`,
     ],
     dedupKeys: ['SO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky", S."DocDate",
  MAX(SL."ShipDate") AS "SO ShipDate",
  CASE WHEN MAX(SL."ShipDate") > CURRENT_DATE THEN 'Chua den ShipDate - chua den ngay xuat hang (binh thuong)'
@@ -234,6 +237,7 @@ ORDER BY S."DocDate", S."DocNum"`,
     ],
     dedupKeys: ['AR Number', 'SO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate", I."CreateDate" AS "AR CreateDate", I."U_ShipDate" AS "AR ShipDate", I."NumAtCard" AS "Invoice No",
  S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky", COUNT(*) AS "So dong AR",
  SUM(CASE WHEN G."DocNum" IS NULL THEN 1 ELSE 0 END) AS "So dong chua co GRPO",
@@ -276,6 +280,7 @@ ORDER BY I."DocDate" DESC, I."DocNum" DESC`,
     ],
     dedupKeys: ['GRPO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", G."DocNum" AS "GRPO Number", G."DocDate", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky", COUNT(*) AS "So dong GRPO"
 FROM maycha_live.OPDN G
 INNER JOIN maycha_live.PDN1 GL ON GL."DocEntry" = G."DocEntry" AND GL."BaseType" = 22
@@ -323,6 +328,7 @@ ORDER BY G."DocDate", G."DocNum"`,
     ],
     dedupKeys: ['AR Number', 'SO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", I."DocNum" AS "AR Number", I."DocDate", I."NumAtCard" AS "Invoice No",
  I."U_InvSeri" AS "Invoice Seri", I."U_InvDate" AS "Invoice Date", S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky"
 FROM kbmd_live.OINV I
@@ -356,6 +362,7 @@ ORDER BY I."DocNum" DESC`,
     ],
     dedupKeys: ['GRPO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", G."DocNum" AS "GRPO Number", G."DocDate", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky", G."Comments"
 FROM maycha_live.OPDN G
 INNER JOIN maycha_live.PDN1 GL ON GL."DocEntry" = G."DocEntry" AND GL."LineNum" = 0 AND GL."BaseType" = 22
@@ -394,6 +401,7 @@ ORDER BY G."DocNum" DESC`,
     ],
     dedupKeys: ['AP Number', 'GRPO Number', 'PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT DISTINCT P."U_Store" AS "Store", A."DocNum" AS "AP Number", A."DocDate", A."NumAtCard" AS "Invoice No",
  G."DocNum" AS "GRPO Number", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", CASE WHEN P."CreateDate" < '{d}' THEN 'Co' ELSE 'Khong' END AS "PO tao truoc ky"
 FROM maycha_live.OPCH A
@@ -444,6 +452,7 @@ ORDER BY A."DocNum" DESC`,
     ],
     dedupKeys: ['PO Number'],
     supportsExtraColumns: true,
+    autoDateUpper: true,
     defaultSql: `SELECT P."U_Store" AS "Store", P."DocNum" AS "PO Number", P."DocEntry" AS "PO DocEntry",
  P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate", P."DocStatus" AS "PO Status",
  COUNT(*) AS "So dong PO", SUM(PL."Quantity") AS "Tong SL PO"
@@ -472,6 +481,7 @@ GROUP BY P."U_Store", P."DocNum", P."DocEntry", P."DocDate", P."CreateDate", P."
     ],
     dedupKeys: ['PO Number', 'SO Number'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", S."DocNum" AS "SO Number", S."DocDate" AS "SO DocDate", S."CreateDate" AS "SO CreateDate",
  (SELECT MAX(SL."ShipDate") FROM kbmd_live.RDR1 SL WHERE SL."DocEntry" = S."DocEntry") AS "SO ShipDate"
 FROM maycha_live.OPOR P {br}
@@ -506,6 +516,7 @@ WHERE {po_filter}`,
     ],
     dedupKeys: ['PO Number', 'AR Number'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate", I."CreateDate" AS "AR CreateDate", I."U_ShipDate" AS "AR ShipDate", I."NumAtCard" AS "Invoice No"
 FROM maycha_live.OPOR P {br}
 INNER JOIN kbmd_live.ORDR S ON S."U_from_refno" = 'PO' || TO_VARCHAR(P."DocNum") AND S."CardCode" = 'NB010002' AND S."CANCELED" = 'N'
@@ -527,6 +538,7 @@ WHERE {po_filter}`,
     baselineColumns: ['PO Number', 'GRPO Number', 'GRPO DocDate'],
     dedupKeys: ['PO Number', 'GRPO Number'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", G."DocDate" AS "GRPO DocDate"
 FROM maycha_live.OPOR P {br}
 INNER JOIN maycha_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
@@ -547,6 +559,7 @@ WHERE {po_filter}`,
     baselineColumns: ['PO Number', 'GRPO Number', 'AP Number', 'AP DocDate'],
     dedupKeys: ['PO Number', 'GRPO Number', 'AP Number'],
     supportsExtraColumns: false,
+    autoDateUpper: true,
     defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", A."DocNum" AS "AP Number", A."DocDate" AS "AP DocDate"
 FROM maycha_live.OPOR P {br}
 INNER JOIN maycha_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
@@ -557,100 +570,102 @@ WHERE {po_filter}`,
   },
 
   // =========================================================================
-  // TAB 2: MONITOR LUỒNG TRẢ — NHÓM 2A: GHÉP CHUỖI TRẢ HÀNG & KHO (#14..#20)
+  // TAB 2: MONITOR LUỒNG TRẢ — NHÓM 2A: GHÉP CHUỖI SO TRẢ HÀNG & KHO (#14..#20)
   // =========================================================================
-  {
-    key: 'ret_po',
-    flow: 'tra',
-    stage: 'main',
-    sortOrder: 14,
-    title: '#14 · Chuỗi Trả hàng — Đầu mục PO trả gốc (KBMĐ)',
-    description:
-      'Truy vấn gốc của Luồng Trả hàng: lấy đơn PO trả hàng bên KBMĐ (CardCode = V0800001) kèm mã cửa hàng và kho PO. Hỗ trợ thêm cột phụ hiển thị ra bảng Chi tiết theo PO & Excel.',
-    impactBadges: [
-      'Bảng Chi tiết theo PO (Luồng Trả)',
-      'Phễu Trả hàng',
-      'Excel Trả hàng',
-    ],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
-    requiredColumns: [
-      'PO Number',
-      'PO DocDate',
-      'PO CreateDate',
-      'Store',
-      'Brand',
-      'MC Docnum',
-      'Kho PO min',
-      'Kho PO max',
-    ],
-    baselineColumns: [
-      'PO Number',
-      'PO DocDate',
-      'PO CreateDate',
-      'Store',
-      'Brand',
-      'MC Docnum',
-      'Kho PO min',
-      'Kho PO max',
-    ],
-    dedupKeys: ['PO Number'],
-    supportsExtraColumns: true,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate", P."CreateDate" AS "PO CreateDate",
- COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-')) AS "Store", W."U_Brand" AS "Brand", P."U_MCDocNum" AS "MC Docnum",
- (SELECT MIN(PL."WhsCode") FROM kbmd_live.POR1 PL WHERE PL."DocEntry" = P."DocEntry") AS "Kho PO min",
- (SELECT MAX(PL."WhsCode") FROM kbmd_live.POR1 PL WHERE PL."DocEntry" = P."DocEntry") AS "Kho PO max"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
-
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'`,
-  },
   {
     key: 'ret_so',
     flow: 'tra',
     stage: 'main',
-    sortOrder: 15,
-    title: '#15 · Chuỗi Trả hàng — Nhánh SO trả hàng (TTVH)',
+    sortOrder: 14,
+    title: '#14 · Chuỗi Trả hàng — Đầu mục SO trả gốc (TTVH)',
     description:
-      'Ghép đơn SO trả hàng bên TTVH với PO trả bên KBMĐ qua U_from_refno = SO<DocNum>, kèm thông tin kho SO.',
+      'Truy vấn gốc của Luồng Trả hàng: lấy đơn SO trả hàng bên TTVH (CardCode = 209010, chưa hủy hoặc còn PO KBMD mở) kèm mã cửa hàng, phiếu MC Tool và kho SO min/max. Hỗ trợ thêm cột phụ hiển thị ra bảng Chi tiết theo SO & Excel.',
     impactBadges: [
-      'Bảng Chi tiết theo PO (Luồng Trả)',
-      'Tab Lệch kho',
-      'Tab Треo T1/T2 Trả hàng',
+      'Bảng Chi tiết theo SO (Luồng Trả)',
+      'Phễu 6 bước Trả hàng',
+      'Excel Trả hàng',
     ],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
     requiredColumns: [
-      'PO Number',
       'SO Number',
       'SO DocDate',
       'SO CreateDate',
+      'SO Canceled',
+      'Store',
+      'Brand',
+      'MC Docnum',
       'SO ShipDate',
       'Kho SO min',
       'Kho SO max',
     ],
     baselineColumns: [
-      'PO Number',
       'SO Number',
       'SO DocDate',
       'SO CreateDate',
+      'SO Canceled',
+      'Store',
+      'Brand',
+      'MC Docnum',
       'SO ShipDate',
       'Kho SO min',
       'Kho SO max',
     ],
-    dedupKeys: ['PO Number', 'SO Number'],
-    supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", S."DocNum" AS "SO Number", S."DocDate" AS "SO DocDate",
- S."CreateDate" AS "SO CreateDate",
+    dedupKeys: ['SO Number'],
+    supportsExtraColumns: true,
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", S."DocDate" AS "SO DocDate", S."CreateDate" AS "SO CreateDate",
+ S."CANCELED" AS "SO Canceled", COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-')) AS "Store", W."U_Brand" AS "Brand", S."U_MCDocNum" AS "MC Docnum",
  (SELECT MAX(L."ShipDate") FROM maycha_live.RDR1 L WHERE L."DocEntry" = S."DocEntry") AS "SO ShipDate",
  (SELECT MIN(L."WhsCode") FROM maycha_live.RDR1 L WHERE L."DocEntry" = S."DocEntry") AS "Kho SO min",
  (SELECT MAX(L."WhsCode") FROM maycha_live.RDR1 L WHERE L."DocEntry" = S."DocEntry") AS "Kho SO max"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
-
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}' AND S."DocNum" IS NOT NULL`,
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}`,
+  },
+  {
+    key: 'ret_po',
+    flow: 'tra',
+    stage: 'main',
+    sortOrder: 15,
+    title: '#15 · Chuỗi Trả hàng — Nhánh PO nhận hàng trả (KBMĐ)',
+    description:
+      'Ghép đơn PO nhận hàng trả bên KBMĐ (CardCode = V0800001) sinh từ SO qua U_from_refno = SO<DocNum>, kèm thông tin kho nhận PO min/max.',
+    impactBadges: [
+      'Bảng Chi tiết theo SO (Luồng Trả)',
+      'Phễu 6 bước (Bước 1: SO → PO)',
+    ],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
+    requiredColumns: [
+      'SO Number',
+      'PO Number',
+      'PO DocDate',
+      'PO CreateDate',
+      'Kho PO min',
+      'Kho PO max',
+    ],
+    baselineColumns: [
+      'SO Number',
+      'PO Number',
+      'PO DocDate',
+      'PO CreateDate',
+      'Kho PO min',
+      'Kho PO max',
+    ],
+    dedupKeys: ['SO Number', 'PO Number'],
+    supportsExtraColumns: false,
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", P."DocNum" AS "PO Number", P."DocDate" AS "PO DocDate",
+ P."CreateDate" AS "PO CreateDate",
+ (SELECT MIN(PL."WhsCode") FROM kbmd_live.POR1 PL WHERE PL."DocEntry" = P."DocEntry") AS "Kho PO min",
+ (SELECT MAX(PL."WhsCode") FROM kbmd_live.POR1 PL WHERE PL."DocEntry" = P."DocEntry") AS "Kho PO max"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}
+ AND P."DocNum" IS NOT NULL`,
   },
   {
     key: 'ret_do',
@@ -660,20 +675,21 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
     title: '#16 · Chuỗi Trả hàng — Nhánh Delivery DO (TTVH)',
     description:
       'Ghép phiếu giao hàng Delivery (ODLN/DLN1) bên TTVH phát sinh từ đơn SO trả hàng.',
-    impactBadges: ['Bảng Chi tiết theo PO (Cột DO Number)'],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
-    requiredColumns: ['PO Number', 'DO Number'],
-    baselineColumns: ['PO Number', 'DO Number'],
-    dedupKeys: ['PO Number', 'DO Number'],
+    impactBadges: ['Bảng Chi tiết theo SO (Cột DO Number)'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
+    requiredColumns: ['SO Number', 'DO Number'],
+    baselineColumns: ['SO Number', 'DO Number'],
+    dedupKeys: ['SO Number', 'DO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", D."DocNum" AS "DO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", D."DocNum" AS "DO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN maycha_live.DLN1 DL ON DL."BaseType" = 17 AND DL."BaseEntry" = S."DocEntry"
 INNER JOIN maycha_live.ODLN D ON D."DocEntry" = DL."DocEntry" AND D."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}`,
   },
   {
     key: 'ret_ar',
@@ -684,13 +700,13 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
     description:
       'Ghép hóa đơn A/R bên TTVH từ cả 2 nhánh: xuất trực tiếp từ SO (BaseType = 17) và xuất qua phiếu giao DO (BaseType = 15). Hỗ trợ thêm cột phụ hiển thị ở bảng A/R chưa xuất HĐ.',
     impactBadges: [
-      'Bảng Chi tiết theo PO (Luồng Trả)',
+      'Bảng Chi tiết theo SO (Luồng Trả)',
       'Tab A/R chưa xuất HĐ (Luồng Trả)',
-      'Tab Treo T3 Trả hàng',
+      'Phễu 6 bước (Bước 2 & Bước 3)',
     ],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
     requiredColumns: [
-      'PO Number',
+      'SO Number',
       'AR Number',
       'AR DocDate',
       'AR CreateDate',
@@ -698,35 +714,36 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
       'Invoice No',
     ],
     baselineColumns: [
-      'PO Number',
+      'SO Number',
       'AR Number',
       'AR DocDate',
       'AR CreateDate',
       'AR ShipDate',
       'Invoice No',
     ],
-    dedupKeys: ['PO Number', 'AR Number'],
+    dedupKeys: ['SO Number', 'AR Number'],
     supportsExtraColumns: true,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate",
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate",
  I."CreateDate" AS "AR CreateDate", (SELECT MAX(L."ShipDate") FROM maycha_live.INV1 L WHERE L."DocEntry" = I."DocEntry") AS "AR ShipDate", I."NumAtCard" AS "Invoice No"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN maycha_live.INV1 N ON N."BaseType" = 17 AND N."BaseEntry" = S."DocEntry"
 INNER JOIN maycha_live.OINV I ON I."DocEntry" = N."DocEntry" AND I."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}
 UNION
-SELECT DISTINCT P."DocNum" AS "PO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate",
+SELECT DISTINCT S."DocNum" AS "SO Number", I."DocNum" AS "AR Number", I."DocDate" AS "AR DocDate",
  I."CreateDate" AS "AR CreateDate", (SELECT MAX(L."ShipDate") FROM maycha_live.INV1 L WHERE L."DocEntry" = I."DocEntry") AS "AR ShipDate", I."NumAtCard" AS "Invoice No"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN maycha_live.DLN1 DL ON DL."BaseType" = 17 AND DL."BaseEntry" = S."DocEntry"
 INNER JOIN maycha_live.INV1 N ON N."BaseType" = 15 AND N."BaseEntry" = DL."DocEntry"
 INNER JOIN maycha_live.OINV I ON I."DocEntry" = N."DocEntry" AND I."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}`,
   },
   {
     key: 'ret_grpo',
@@ -735,39 +752,39 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
     sortOrder: 18,
     title: '#18 · Chuỗi Trả hàng — Nhánh GRPO nhận hàng trả (KBMĐ)',
     description:
-      'Ghép phiếu nhập kho GRPO bên KBMĐ (OPDN/PDN1) kế thừa từ đơn PO trả hàng kèm mã kho GRPO min/max để kiểm tra lệch kho.',
+      'Ghép phiếu nhập kho GRPO bên KBMĐ (OPDN/PDN1) kế thừa từ đơn PO trả hàng kèm mã kho GRPO min/max.',
     impactBadges: [
-      'Bảng Chi tiết theo PO (Luồng Trả)',
-      'Tab Lệch kho',
-      'Tab Treo T4 Trả hàng',
+      'Bảng Chi tiết theo SO (Luồng Trả)',
+      'Phễu 6 bước (Bước 4: A/R → GRPO)',
     ],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
     requiredColumns: [
-      'PO Number',
+      'SO Number',
       'GRPO Number',
       'GRPO DocDate',
       'Kho GRPO min',
       'Kho GRPO max',
     ],
     baselineColumns: [
-      'PO Number',
+      'SO Number',
       'GRPO Number',
       'GRPO DocDate',
       'Kho GRPO min',
       'Kho GRPO max',
     ],
-    dedupKeys: ['PO Number', 'GRPO Number'],
+    dedupKeys: ['SO Number', 'GRPO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", G."DocDate" AS "GRPO DocDate",
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", G."DocNum" AS "GRPO Number", G."DocDate" AS "GRPO DocDate",
  (SELECT MIN(X."WhsCode") FROM kbmd_live.PDN1 X WHERE X."DocEntry" = G."DocEntry") AS "Kho GRPO min",
  (SELECT MAX(X."WhsCode") FROM kbmd_live.PDN1 X WHERE X."DocEntry" = G."DocEntry") AS "Kho GRPO max"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN kbmd_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN kbmd_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}`,
   },
   {
     key: 'ret_ap',
@@ -776,26 +793,40 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
     sortOrder: 19,
     title: '#19 · Chuỗi Trả hàng — Nhánh A/P Invoice (KBMĐ)',
     description:
-      'Ghép hóa đơn A/P Invoice bên KBMĐ (OPCH/PCH1) kế thừa từ phiếu nhập kho GRPO trả hàng.',
+      'Ghép hóa đơn A/P Invoice và số hóa đơn đầu vào (AP Invoice No) bên KBMĐ kế thừa từ phiếu nhập kho GRPO trả hàng.',
     impactBadges: [
-      'Bảng Chi tiết theo PO (Luồng Trả)',
-      'Phễu Trả hàng (Bước A/P)',
+      'Bảng Chi tiết theo SO (Luồng Trả)',
+      'Phễu 6 bước (Bước 5 & Bước 6)',
     ],
-    allowedPlaceholders: ['{brand}', '{date_cond}'],
-    requiredColumns: ['PO Number', 'GRPO Number', 'AP Number', 'AP DocDate'],
-    baselineColumns: ['PO Number', 'GRPO Number', 'AP Number', 'AP DocDate'],
-    dedupKeys: ['PO Number', 'GRPO Number', 'AP Number'],
+    allowedPlaceholders: ['{brand_cond}', '{date_cond}'],
+    requiredColumns: [
+      'SO Number',
+      'GRPO Number',
+      'AP Number',
+      'AP DocDate',
+      'AP Invoice No',
+    ],
+    baselineColumns: [
+      'SO Number',
+      'GRPO Number',
+      'AP Number',
+      'AP DocDate',
+      'AP Invoice No',
+    ],
+    dedupKeys: ['SO Number', 'GRPO Number', 'AP Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number", G."DocNum" AS "GRPO Number", A."DocNum" AS "AP Number", A."DocDate" AS "AP DocDate"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number", G."DocNum" AS "GRPO Number", A."DocNum" AS "AP Number", A."DocDate" AS "AP DocDate",
+ A."NumAtCard" AS "AP Invoice No"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN kbmd_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN kbmd_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'
 INNER JOIN kbmd_live.PCH1 AL ON AL."BaseType" = 20 AND AL."BaseEntry" = G."DocEntry"
 INNER JOIN kbmd_live.OPCH A ON A."DocEntry" = AL."DocEntry" AND A."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
-  AND W."U_Brand" = '{brand}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND {date_cond}{brand_cond}`,
   },
   {
     key: 'ret_whs',
@@ -804,137 +835,147 @@ WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND {date_cond}
     sortOrder: 20,
     title: '#20 · Từ điển Danh mục Kho (OWHS · TTVH & KBMĐ)',
     description:
-      'Lấy danh mục mã kho và tên kho từ cả 2 pháp nhân maycha_live (T) và kbmd_live (K) để hiển thị tên kho đầy đủ.',
+      'Lấy danh mục mã kho và tên kho từ cả 2 pháp nhân maycha_live (T) và kbmd_live (K) để hiển thị tên cửa hàng và tên kho nhận đầy đủ.',
     impactBadges: ['Tên Cửa hàng & Kho trên Luồng Trả'],
     allowedPlaceholders: [],
     requiredColumns: ['DB', 'WhsCode', 'WhsName'],
     baselineColumns: ['DB', 'WhsCode', 'WhsName'],
     dedupKeys: ['DB', 'WhsCode'],
     supportsExtraColumns: false,
+    autoDateUpper: false,
     defaultSql: `SELECT 'T' AS "DB", "WhsCode", "WhsName" FROM maycha_live.OWHS
 UNION ALL
 SELECT 'K', "WhsCode", "WhsName" FROM kbmd_live.OWHS`,
   },
 
   // =========================================================================
-  // TAB 2: MONITOR LUỒNG TRẢ — NHÓM 2B: TÌM CHỨNG TỪ NHÓM CŨ (#21..#25)
+  // TAB 2: MONITOR LUỒNG TRẢ — NHÓM 2B: TÌM SO NHÓM CŨ (#21..#25)
   // =========================================================================
   {
-    key: 'ret_old_1',
+    key: 'old_sos_1',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 21,
-    title: '#21 · Tìm PO Trả cũ — Nhánh 1: Có SO mới tạo trong kỳ',
+    title: '#21 · Tìm SO Trả cũ — Nhánh 1: Có PO KBMĐ mới tạo trong kỳ',
     description:
-      'Tìm các đơn PO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có đơn SO đối ứng bên TTVH mới được tạo trong kỳ.',
-    impactBadges: ['Nhóm Cũ (PO trước kỳ có phát sinh trong kỳ)'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: ['PO Number'],
+      'Tìm các đơn SO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có đơn PO đối ứng bên KBMĐ mới được tạo từ ngày bắt đầu.',
+    impactBadges: ['Nhóm Cũ (SO trước kỳ có phát sinh chứng từ trong kỳ)'],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
-
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND P."DocDate" < '{d}'
-  AND W."U_Brand" = '{brand}' AND S."DocNum" IS NOT NULL AND S."CreateDate" >= '{d}'`,
+    autoDateUpper: false,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND S."DocDate" < '{d}'{brand_cond}
+ AND P."DocNum" IS NOT NULL AND P."CreateDate" >= '{d}'`,
   },
   {
-    key: 'ret_old_2',
+    key: 'old_sos_2',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 22,
-    title: '#22 · Tìm PO Trả cũ — Nhánh 2: Có A/R trực tiếp mới tạo trong kỳ',
+    title: '#22 · Tìm SO Trả cũ — Nhánh 2: Có A/R trực tiếp mới tạo trong kỳ',
     description:
-      'Tìm các đơn PO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/R trực tiếp từ SO mới tạo trong kỳ.',
-    impactBadges: ['Nhóm Cũ (PO trước kỳ có phát sinh trong kỳ)'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: ['PO Number'],
+      'Tìm các đơn SO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/R trực tiếp từ SO mới tạo từ ngày bắt đầu.',
+    impactBadges: ['Nhóm Cũ (SO trước kỳ có phát sinh chứng từ trong kỳ)'],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: false,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN maycha_live.INV1 N ON N."BaseType" = 17 AND N."BaseEntry" = S."DocEntry"
 INNER JOIN maycha_live.OINV I ON I."DocEntry" = N."DocEntry" AND I."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND P."DocDate" < '{d}'
-  AND W."U_Brand" = '{brand}' AND I."CreateDate" >= '{d}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND S."DocDate" < '{d}'{brand_cond}
+ AND I."CreateDate" >= '{d}'`,
   },
   {
-    key: 'ret_old_3',
+    key: 'old_sos_3',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 23,
-    title: '#23 · Tìm PO Trả cũ — Nhánh 3: Có A/R qua DO mới tạo trong kỳ',
+    title: '#23 · Tìm SO Trả cũ — Nhánh 3: Có A/R qua DO mới tạo trong kỳ',
     description:
-      'Tìm các đơn PO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/R kế thừa từ phiếu giao DO mới tạo trong kỳ.',
-    impactBadges: ['Nhóm Cũ (PO trước kỳ có phát sinh trong kỳ)'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: ['PO Number'],
+      'Tìm các đơn SO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/R kế thừa từ phiếu giao DO mới tạo từ ngày bắt đầu.',
+    impactBadges: ['Nhóm Cũ (SO trước kỳ có phát sinh chứng từ trong kỳ)'],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: false,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN maycha_live.DLN1 DL ON DL."BaseType" = 17 AND DL."BaseEntry" = S."DocEntry"
 INNER JOIN maycha_live.INV1 N ON N."BaseType" = 15 AND N."BaseEntry" = DL."DocEntry"
 INNER JOIN maycha_live.OINV I ON I."DocEntry" = N."DocEntry" AND I."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND P."DocDate" < '{d}'
-  AND W."U_Brand" = '{brand}' AND I."CreateDate" >= '{d}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND S."DocDate" < '{d}'{brand_cond}
+ AND I."CreateDate" >= '{d}'`,
   },
   {
-    key: 'ret_old_4',
+    key: 'old_sos_4',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 24,
-    title: '#24 · Tìm PO Trả cũ — Nhánh 4: Có GRPO mới hạch toán trong kỳ',
+    title: '#24 · Tìm SO Trả cũ — Nhánh 4: Có GRPO mới hạch toán trong kỳ',
     description:
-      'Tìm các đơn PO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có phiếu nhập kho GRPO bên KBMĐ phát sinh trong kỳ.',
-    impactBadges: ['Nhóm Cũ (PO trước kỳ có phát sinh trong kỳ)'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: ['PO Number'],
+      'Tìm các đơn SO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có phiếu nhập kho GRPO bên KBMĐ phát sinh trong kỳ.',
+    impactBadges: ['Nhóm Cũ (SO trước kỳ có phát sinh chứng từ trong kỳ)'],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN kbmd_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN kbmd_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND P."DocDate" < '{d}'
-  AND W."U_Brand" = '{brand}' AND G."DocDate" >= '{d}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND S."DocDate" < '{d}'{brand_cond}
+ AND G."DocDate" >= '{d}'`,
   },
   {
-    key: 'ret_old_5',
+    key: 'old_sos_5',
     flow: 'tra',
     stage: 'old_discovery',
     sortOrder: 25,
-    title: '#25 · Tìm PO Trả cũ — Nhánh 5: Có A/P mới hạch toán trong kỳ',
+    title: '#25 · Tìm SO Trả cũ — Nhánh 5: Có A/P mới hạch toán trong kỳ',
     description:
-      'Tìm các đơn PO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/P bên KBMĐ phát sinh trong kỳ.',
-    impactBadges: ['Nhóm Cũ (PO trước kỳ có phát sinh trong kỳ)'],
-    allowedPlaceholders: ['{d}', '{brand}'],
-    requiredColumns: ['PO Number'],
-    baselineColumns: ['PO Number'],
-    dedupKeys: ['PO Number'],
+      'Tìm các đơn SO trả hàng có DocDate trước ngày bắt đầu ({d}) nhưng có hóa đơn A/P bên KBMĐ phát sinh trong kỳ.',
+    impactBadges: ['Nhóm Cũ (SO trước kỳ có phát sinh chứng từ trong kỳ)'],
+    allowedPlaceholders: ['{d}', '{brand_cond}'],
+    requiredColumns: ['SO Number'],
+    baselineColumns: ['SO Number'],
+    dedupKeys: ['SO Number'],
     supportsExtraColumns: false,
-    defaultSql: `SELECT DISTINCT P."DocNum" AS "PO Number"
-FROM kbmd_live.OPOR P
-LEFT JOIN maycha_live.ORDR S ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum") AND S."CANCELED" = 'N'
-LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(P."U_MCDocNum", '-'))
+    autoDateUpper: true,
+    defaultSql: `SELECT DISTINCT S."DocNum" AS "SO Number"
+FROM maycha_live.ORDR S
+LEFT JOIN kbmd_live.OPOR P ON P."U_from_refno" = 'SO' || TO_VARCHAR(S."DocNum")
+  AND P."CardCode" = 'V0800001' AND P."CANCELED" = 'N'
+LEFT JOIN maycha_live.OWHS W ON W."WhsCode" = COALESCE(S."U_Store", SUBSTR_BEFORE(S."U_MCDocNum", '-'))
 INNER JOIN kbmd_live.PDN1 GL ON GL."BaseType" = 22 AND GL."BaseEntry" = P."DocEntry"
 INNER JOIN kbmd_live.OPDN G ON G."DocEntry" = GL."DocEntry" AND G."CANCELED" = 'N'
 INNER JOIN kbmd_live.PCH1 AL ON AL."BaseType" = 20 AND AL."BaseEntry" = G."DocEntry"
 INNER JOIN kbmd_live.OPCH A ON A."DocEntry" = AL."DocEntry" AND A."CANCELED" = 'N'
-WHERE P."CardCode" = 'V0800001' AND P."CANCELED" = 'N' AND P."DocDate" < '{d}'
-  AND W."U_Brand" = '{brand}' AND A."DocDate" >= '{d}'`,
+WHERE S."CardCode" = '209010' AND (S."CANCELED" = 'N' OR P."DocNum" IS NOT NULL) AND S."DocDate" < '{d}'{brand_cond}
+ AND A."DocDate" >= '{d}'`,
   },
 ] as const;
 

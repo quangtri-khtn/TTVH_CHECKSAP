@@ -1,7 +1,14 @@
 // Must run before PrismaService is constructed below — PrismaService reads
 // process.env.DATABASE_URL directly at construction time, and this test
 // file (unlike main.ts) has no other entry point that loads .env first.
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const rootEnv = resolve(__dirname, '../../../../../.env');
+const apiEnv = resolve(__dirname, '../../../.env');
+if (existsSync(rootEnv)) dotenv.config({ path: rootEnv, override: true });
+if (existsSync(apiEnv)) dotenv.config({ path: apiEnv, override: true });
 import { UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthSessionsService } from './auth-sessions.service';

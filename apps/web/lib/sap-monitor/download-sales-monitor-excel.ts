@@ -49,39 +49,51 @@ async function triggerBlobDownload(res: Response, fallbackFilename: string): Pro
 
 export async function downloadSalesMonitorDetailExcel(params: {
   dateFrom: string;
+  dateTo?: string;
   brand: string;
 }): Promise<void> {
-  const qs = new URLSearchParams({
+  const searchParams = new URLSearchParams({
     dateFrom: params.dateFrom,
-    brand: params.brand,
-  }).toString();
+    brand: params.brand === 'ALL' ? '' : params.brand,
+  });
+  if (params.dateTo) {
+    searchParams.set('dateTo', params.dateTo);
+  }
 
-  const res = await authedFetch(`${getApiBase()}/sap/sales-monitor/export?${qs}`);
+  const res = await authedFetch(
+    `${getApiBase()}/sap/sales-monitor/export?${searchParams.toString()}`,
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? 'Không thể xuất file Excel chi tiết.');
   }
 
-  const fallback = `Monitor_Chi_Tiet_${params.dateFrom}_Brand${params.brand}.xlsx`;
+  const fallback = `Monitor_Chi_Tiet_${params.dateFrom}_Brand${params.brand || 'ALL'}.xlsx`;
   await triggerBlobDownload(res, fallback);
 }
 
 export async function downloadSalesMonitorGridExcel(params: {
   dateFrom: string;
+  dateTo?: string;
   brand: string;
   cohort: CohortFilter;
   sourceType: ExportSourceType;
   sourceKey: string;
 }): Promise<void> {
-  const qs = new URLSearchParams({
+  const searchParams = new URLSearchParams({
     dateFrom: params.dateFrom,
-    brand: params.brand,
+    brand: params.brand === 'ALL' ? '' : params.brand,
     cohort: params.cohort,
     sourceType: params.sourceType,
     sourceKey: params.sourceKey,
-  }).toString();
+  });
+  if (params.dateTo) {
+    searchParams.set('dateTo', params.dateTo);
+  }
 
-  const res = await authedFetch(`${getApiBase()}/sap/sales-monitor/export-grid?${qs}`);
+  const res = await authedFetch(
+    `${getApiBase()}/sap/sales-monitor/export-grid?${searchParams.toString()}`,
+  );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? 'Không thể xuất file Excel danh sách.');

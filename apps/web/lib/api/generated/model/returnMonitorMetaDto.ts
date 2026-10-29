@@ -8,7 +8,9 @@
 export interface ReturnMonitorMetaDto {
   /** Từ ngày truy vấn (YYYYMMDD) */
   dateFrom: string;
-  /** Mã thương hiệu truy vấn */
+  /** Đến ngày truy vấn (YYYYMMDD) */
+  dateTo?: string;
+  /** Mã thương hiệu truy vấn (chuỗi rỗng = mọi brand) */
   brand: string;
   /** Ngày hiện tại theo múi giờ Việt Nam (YYYY-MM-DD) */
   today: string;

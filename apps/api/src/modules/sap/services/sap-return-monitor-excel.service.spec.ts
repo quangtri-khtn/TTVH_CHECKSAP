@@ -6,7 +6,7 @@ import {
   RET_FUNNEL_HEADERS,
   RST_AR_NO_INV,
   RST_FULL,
-  RST_NO_SO,
+  RST_NO_PO,
 } from '../lib/return-monitor';
 import { SapReturnMonitorExcelService } from './sap-return-monitor-excel.service';
 
@@ -14,12 +14,12 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
   const funnel = [
     {
       step: 1,
-      label: '⚠ 1. PO → SO (TTVH)\n  • ✔ 1 PO đã sync SO',
-      autoLabel: '1. PO → SO (TTVH)\n  • ✔ 1 PO đã sync SO',
-      unit: 'PO',
+      label: '⚠ 1. SO (TTVH) → PO (KBMD)\n  • ✔ 1/2 SO đã sinh PO (KBMD)',
+      autoLabel: '1. SO (TTVH) → PO (KBMD)\n  • ✔ 1/2 SO đã sinh PO (KBMD)',
+      unit: 'SO',
       vin: 2,
       ok: 1,
-      okText: '1 PO đã sync SO',
+      okText: '1 SO → PO',
       rate: '50%',
       notOk: 1,
       wait: 0,
@@ -28,8 +28,8 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     },
     {
       step: 2,
-      label: '✔ 2. SO → A/R (TTVH)\n  • ✔ 1 SO đã lên A/R',
-      autoLabel: '2. SO → A/R (TTVH)\n  • ✔ 1 SO đã lên A/R',
+      label: '✔ 2. SO → A/R (TTVH)\n  • ✔ 1/1 SO đã có A/R',
+      autoLabel: '2. SO → A/R (TTVH)\n  • ✔ 1/1 SO đã có A/R',
       unit: 'SO',
       vin: 1,
       ok: 1,
@@ -47,7 +47,7 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       unit: 'A/R',
       vin: 1,
       ok: 0,
-      okText: '0 A/R đã xuất HĐ',
+      okText: '0 A/R đã xuất HĐ (thuộc 0 SO)',
       rate: '0%',
       notOk: 1,
       wait: 0,
@@ -56,12 +56,12 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     },
     {
       step: 4,
-      label: '✔ 4. A/R có HĐ → GRPO (KBMD)\n  • ✔ 0 A/R có GRPO',
-      autoLabel: '4. A/R có HĐ → GRPO (KBMD)\n  • ✔ 0 A/R có GRPO',
+      label: '✔ 4. A/R đã xuất HĐ → GRPO (KBMD)\n  • ✔ 0 A/R có GRPO',
+      autoLabel: '4. A/R đã xuất HĐ → GRPO (KBMD)\n  • ✔ 0 A/R có GRPO',
       unit: 'A/R',
       vin: 0,
       ok: 0,
-      okText: '0 PO có A/R HĐ → 0 PO có GRPO',
+      okText: '0 A/R (thuộc 0 SO) đã có GRPO',
       rate: '–',
       notOk: 0,
       wait: 0,
@@ -82,17 +82,34 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       act: 0,
       icon: '✔',
     },
+    {
+      step: 6,
+      label: '✔ 6. AP (KBMD) → có Invoice\n  • ✔ 0 SO có AP đã có Invoice',
+      autoLabel: '6. AP (KBMD) → có Invoice\n  • ✔ 0 SO có AP đã có Invoice',
+      unit: 'SO',
+      vin: 0,
+      ok: 0,
+      okText: '0 SO có AP đã có Invoice',
+      rate: '–',
+      notOk: 0,
+      wait: 0,
+      act: 0,
+      icon: '✔',
+    },
   ];
 
   const statusCounts = {
-    po_no_so: 1,
+    so_canceled: 0,
+    so_no_po: 1,
     so_no_ar: 0,
     so_no_ar_wait: 0,
     ar_no_inv: 1,
     ar_no_grpo: 0,
     ar_no_grpo_wait: 0,
     grpo_no_ap: 0,
-    po_full: 0,
+    ap_no_inv: 0,
+    so_full: 0,
+    so_manual: 0,
   };
 
   const moiChainRow = [
@@ -103,27 +120,30 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     1001,
     '2026-10-10',
     '2026-10-10',
+    '2026-10-12',
     'MC001-01',
-    'K01',
-    'Kho Tổng 1',
+    'AUTO',
+    '',
+    'T01',
+    '',
+    null,
+    null,
+    '',
+    '',
+    '',
+    '',
     '',
     null,
     null,
     null,
     '',
     '',
-    '',
-    '',
-    null,
-    null,
     null,
     '',
     '',
-    null,
-    '',
     '',
     null,
-    RST_NO_SO,
+    RST_NO_PO,
   ];
 
   const moiArNoInvChainRow = [
@@ -134,23 +154,26 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     1002,
     '2026-10-11',
     '2026-10-11',
+    '2026-10-12',
     'MC002-01',
-    'K01',
-    'Kho Tổng 1',
+    'AUTO',
+    '',
+    'T01',
     '2002',
     '2026-10-11',
     '2026-10-11',
-    '2026-10-12',
-    'T01',
+    'K01',
+    'Kho Tổng 1',
     '3002',
     '4002',
     '',
     '2026-10-12',
     '2026-10-12',
     '2026-10-12',
-    'Chưa xuất HĐ – chưa kích hoạt đồng bộ GRPO',
+    '',
     '',
     null,
+    '',
     '',
     '',
     null,
@@ -165,14 +188,16 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     901,
     '2026-10-01',
     '2026-10-01',
+    '2026-10-09',
     'MC011-01',
-    'K02',
-    'Kho Tổng 2',
+    'AUTO',
+    '',
+    'T02',
     '1901',
     '2026-10-08',
     '2026-10-08',
-    '2026-10-09',
-    'T02',
+    'K02',
+    'Kho Tổng 2',
     '2901',
     '3901',
     'INV-901',
@@ -184,6 +209,7 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
     '2026-10-10',
     'K02',
     '5901',
+    'AP-INV-901',
     '2026-10-11',
     RST_FULL,
   ];
@@ -194,8 +220,12 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       'MC002',
       'Cửa hàng Q3',
       1002,
+      '2026-10-11',
+      '2026-10-11',
       'MC002-01',
       '2002',
+      '2026-10-11',
+      '2026-10-11',
       '2026-10-12',
       '4002',
       '2026-10-12',
@@ -211,8 +241,12 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       'MC011',
       'Cửa hàng Cũ',
       901,
+      '2026-10-01',
+      '2026-10-01',
       'MC011-01',
       '1901',
+      '2026-10-08',
+      '2026-10-08',
       '2026-10-09',
       '3902',
       '2026-10-10',
@@ -221,18 +255,19 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       11,
       '3901',
       RST_FULL,
-      'PO đã được xếp vào bước sau vì có A/R khác đã xuất HĐ – A/R này vẫn thiếu HĐ',
+      'SO đã được xếp vào bước sau vì có A/R khác đã xuất HĐ – A/R này vẫn thiếu HĐ',
     ],
   ];
 
   return {
     meta: {
       dateFrom: '20261007',
+      dateTo: '20261028',
       brand: '5001',
       today: '2026-10-21',
       generatedAt: '2026-10-21T09:00:00.000Z',
       fromCache: false,
-      queryCount: 8,
+      queryCount: 12,
       durationMs: 120,
     },
     summary: {
@@ -245,12 +280,12 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
       moi: { funnel, statusCounts, poCount: 2 },
       cu: {
         funnel,
-        statusCounts: { ...statusCounts, po_no_so: 0, ar_no_inv: 0, po_full: 1 },
+        statusCounts: { ...statusCounts, so_no_po: 0, ar_no_inv: 0, so_full: 1 },
         poCount: 1,
       },
       tatCa: {
         funnel,
-        statusCounts: { ...statusCounts, po_full: 1 },
+        statusCounts: { ...statusCounts, so_full: 1 },
         poCount: 3,
       },
     },
@@ -268,7 +303,7 @@ function createMockReturnMonitorData(): ReturnMonitorDataDto {
 }
 
 describe('SapReturnMonitorExcelService', () => {
-  it('Test Case 1 & 2: builds a valid 3-sheet detail workbook with column widths, bold headers, 28 chain cols, and 15 arNoInv cols', async () => {
+  it('Test Case 1 & 2: builds a valid 3-sheet detail workbook with column widths, bold headers, 31 chain cols, and 19 arNoInv cols', async () => {
     const mockData = createMockReturnMonitorData();
     const getReturnMonitor = jest.fn().mockResolvedValue(mockData);
     const service = new SapReturnMonitorExcelService({
@@ -277,15 +312,19 @@ describe('SapReturnMonitorExcelService', () => {
 
     const { buffer, filename } = await service.exportDetailWorkbook({
       dateFrom: '20261007',
+      dateTo: '20261028',
       brand: '5001',
     });
 
     expect(getReturnMonitor).toHaveBeenCalledWith({
       dateFrom: '20261007',
+      dateTo: '20261028',
       brand: '5001',
       refresh: false,
     });
-    expect(filename).toMatch(/^Monitor_Luong_Tra_20261007_\d{8}_\d{6}\.xlsx$/);
+    expect(filename).toMatch(
+      /^Monitor_Luong_Tra_20261007_20261028_\d{8}_\d{6}\.xlsx$/,
+    );
     expect(buffer.byteLength).toBeGreaterThan(0);
 
     const wb = new ExcelJS.Workbook();
@@ -293,7 +332,7 @@ describe('SapReturnMonitorExcelService', () => {
 
     expect(wb.worksheets.map((ws) => ws.name)).toEqual([
       'Tong quan',
-      'Chi tiet theo PO',
+      'Chi tiet theo SO',
       'A-R chua xuat HD',
     ]);
 
@@ -305,45 +344,45 @@ describe('SapReturnMonitorExcelService', () => {
 
     expect(overviewWs.getRow(1).getCell(1).value).toBe('Từ ngày');
     expect(overviewWs.getRow(1).getCell(2).value).toBe('07/10/2026');
-    expect(overviewWs.getRow(2).getCell(1).value).toBe(
-      'Brand (U_Brand) + cửa hàng pilot',
+    expect(overviewWs.getRow(2).getCell(1).value).toBe('Đến ngày');
+    expect(overviewWs.getRow(2).getCell(2).value).toBe('28/10/2026');
+    expect(overviewWs.getRow(3).getCell(1).value).toBe(
+      'Brand (U_Brand) + cửa hàng luồng Trả',
     );
-    expect(overviewWs.getRow(2).getCell(2).value).toBe('5001');
-    expect(overviewWs.getRow(5).getCell(1).value).toBe(
+    expect(overviewWs.getRow(3).getCell(2).value).toBe('5001');
+    expect(overviewWs.getRow(6).getCell(1).value).toBe(
       'Phễu chuyển đổi từng bước',
     );
-    expect(overviewWs.getRow(5).getCell(1).font?.bold).toBe(true);
-    expect(overviewWs.getRow(8).getCell(1).value).toBe(RET_FUNNEL_HEADERS[0]);
-    expect(overviewWs.getRow(8).getCell(1).font?.bold).toBe(true);
+    expect(overviewWs.getRow(6).getCell(1).font?.bold).toBe(true);
+    expect(overviewWs.getRow(9).getCell(1).value).toBe(RET_FUNNEL_HEADERS[0]);
+    expect(overviewWs.getRow(9).getCell(1).font?.bold).toBe(true);
 
     const lastRow = overviewWs.getRow(overviewWs.rowCount);
-    expect(lastRow.getCell(1).value).toBe('Tổng số PO trả hàng');
+    expect(lastRow.getCell(1).value).toBe('Tổng số SO trả hàng');
     expect(lastRow.getCell(2).value).toBe(1);
     expect(lastRow.getCell(1).font?.bold).toBe(true);
 
-    const chainWs = wb.getWorksheet('Chi tiet theo PO')!;
-    expect(chainWs.columnCount).toBe(28);
-    expect(chainWs.rowCount).toBe(4); // 1 header + 3 PO rows
+    const chainWs = wb.getWorksheet('Chi tiet theo SO')!;
+    expect(chainWs.columnCount).toBe(31);
+    expect(chainWs.rowCount).toBe(4); // 1 header + 3 SO rows
     expect(chainWs.getRow(1).getCell(1).fill).toMatchObject({
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF1F4E79' },
     });
-    // Kiểm tra bảo vệ Formula Injection
     expect(chainWs.getRow(3).getCell(2).value).toBe('\'=CMD|"/C calc"!A0');
 
     const arNoInvWs = wb.getWorksheet('A-R chua xuat HD')!;
-    expect(arNoInvWs.columnCount).toBe(15);
+    expect(arNoInvWs.columnCount).toBe(19);
     expect(arNoInvWs.rowCount).toBe(3); // 1 header + 2 A/R rows
   });
 
-  it('Test Case 3: builds a 1-sheet grid workbook for viewMode="ar_noinv" and viewMode="po" with cohort and statusFilter', async () => {
+  it('Test Case 3: builds a 1-sheet grid workbook for viewMode="ar_noinv" and viewMode="so" with cohort and statusFilter', async () => {
     const mockData = createMockReturnMonitorData();
     const service = new SapReturnMonitorExcelService({
       getReturnMonitor: jest.fn().mockResolvedValue(mockData),
     } as never);
 
-    // 3a: viewMode = 'ar_noinv', cohort = 'moi' -> chỉ giữ 1 dòng nhóm Mới
     const arRes = await service.exportGridWorkbook({
       dateFrom: '20261007',
       brand: '5001',
@@ -356,40 +395,38 @@ describe('SapReturnMonitorExcelService', () => {
     await wbAr.xlsx.load(arRes.buffer as unknown as ExcelJS.Buffer);
     expect(wbAr.worksheets.map((ws) => ws.name)).toEqual(['A-R chua xuat HD']);
     const wsAr = wbAr.getWorksheet('A-R chua xuat HD')!;
-    expect(wsAr.columnCount).toBe(15);
-    expect(wsAr.rowCount).toBe(2); // 1 header + 1 dòng nhóm Mới
+    expect(wsAr.columnCount).toBe(19);
+    expect(wsAr.rowCount).toBe(2);
     expect(wsAr.getRow(2).getCell(1).value).toBe('Mới');
 
-    // 3b: viewMode = 'po', cohort = 'moi', statusFilter = RST_NO_SO -> chỉ giữ 1 dòng PO 1001
-    const poRes = await service.exportGridWorkbook({
+    const soRes = await service.exportGridWorkbook({
       dateFrom: '20261007',
       brand: '5001',
       cohort: 'moi',
-      viewMode: 'po',
-      statusFilter: RST_NO_SO,
+      viewMode: 'so',
+      statusFilter: RST_NO_PO,
     });
-    expect(poRes.filename).toMatch(/^Monitor_Luong_Tra_Luoi_\d{8}_\d{6}\.xlsx$/);
+    expect(soRes.filename).toMatch(/^Monitor_Luong_Tra_Luoi_\d{8}_\d{6}\.xlsx$/);
 
-    const wbPo = new ExcelJS.Workbook();
-    await wbPo.xlsx.load(poRes.buffer as unknown as ExcelJS.Buffer);
-    expect(wbPo.worksheets.map((ws) => ws.name)).toEqual([
-      'Danh sach PO tra hang',
+    const wbSo = new ExcelJS.Workbook();
+    await wbSo.xlsx.load(soRes.buffer as unknown as ExcelJS.Buffer);
+    expect(wbSo.worksheets.map((ws) => ws.name)).toEqual([
+      'Danh sach SO tra hang',
     ]);
-    const wsPo = wbPo.getWorksheet('Danh sach PO tra hang')!;
-    expect(wsPo.columnCount).toBe(28);
-    expect(wsPo.rowCount).toBe(2); // 1 header + 1 dòng khớp statusFilter
-    expect(wsPo.getRow(2).getCell(5).value).toBe(1001);
-    expect(wsPo.getRow(2).getCell(28).value).toBe(RST_NO_SO);
+    const wsSo = wbSo.getWorksheet('Danh sach SO tra hang')!;
+    expect(wsSo.columnCount).toBe(31);
+    expect(wsSo.rowCount).toBe(2);
+    expect(wsSo.getRow(2).getCell(5).value).toBe(1001);
+    expect(wsSo.getRow(2).getCell(31).value).toBe(RST_NO_PO);
 
-    // 3c: viewMode = 'po', cohort = 'tatCa', không truyền statusFilter -> giữ cả 3 dòng PO
-    const allPoRes = await service.exportGridWorkbook({
+    const allSoRes = await service.exportGridWorkbook({
       dateFrom: '20261007',
       brand: '5001',
       cohort: 'tatCa',
-      viewMode: 'po',
+      viewMode: 'so',
     });
-    const wbAllPo = new ExcelJS.Workbook();
-    await wbAllPo.xlsx.load(allPoRes.buffer as unknown as ExcelJS.Buffer);
-    expect(wbAllPo.getWorksheet('Danh sach PO tra hang')!.rowCount).toBe(4);
+    const wbAllSo = new ExcelJS.Workbook();
+    await wbAllSo.xlsx.load(allSoRes.buffer as unknown as ExcelJS.Buffer);
+    expect(wbAllSo.getWorksheet('Danh sach SO tra hang')!.rowCount).toBe(4);
   });
 });

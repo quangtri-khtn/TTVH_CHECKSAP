@@ -11,7 +11,11 @@ export type SapReturnMonitorGetDataParams = {
  */
 dateFrom?: string;
 /**
- * Mã thương hiệu 1-10 ký tự chữ và số ASCII (ví dụ 5001)
+ * Đến ngày theo định dạng YYYYMMDD (mặc định ngày hiện tại)
+ */
+dateTo?: string;
+/**
+ * Mã thương hiệu 0-10 ký tự chữ và số ASCII (ví dụ 5001, để trống = mọi brand)
  */
 brand?: string;
 /**

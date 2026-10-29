@@ -3,20 +3,20 @@
 // 2. Bung biến runtime 1 lượt có kiểm tra định dạng (`expandCatalogTemplate`, `renderCatalogSql`)
 // 3. Kiểm tra tĩnh 4 lớp bằng State-Machine Lexer (`validateQueryStatic`)
 // 4. Đối chiếu Hợp đồng Cột, khóa khử trùng `dedupKeys` và ngữ nghĩa KPI (`compareQueryColumns`)
-import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { type OpenQuerySql, wrapOpenquery } from './openquery';
 import {
-   MONITOR_DEFAULT_BRAND,
+  MONITOR_DEFAULT_BRAND,
   MONITOR_DEFAULT_DATE,
   SALES_PO_VENDOR_CODE,
   SAP_SCHEMA_KBMD,
   SAP_SCHEMA_TTVH,
 } from './sap-constants';
 import {
+  applyDateTo,
   assertPoNumbers,
   assertSapBrand,
-  assertSapDate,
+  assertSapDateRange,
 } from './sap-query-params';
 import type { SapCellValue } from './sap-row-normalizer';
 import type { SapQueryCatalogEntry } from '../queries/sap-query-catalog';
@@ -24,14 +24,21 @@ import type { SapQueryCatalogEntry } from '../queries/sap-query-catalog';
 /** Ngưỡng tối đa an toàn của chuỗi bên trong OPENQUERY (chừa biên an toàn dưới mức cứng 8000 của SQL Server). */
 export const OPENQUERY_SAFE_MAX_LENGTH = 7800;
 
-/** Số lượng PO tối đa của 1 lô truy vấn Nhóm Cũ để đo độ dài kịch bản xấu nhất. */
+/** Số lượng PO tối đa của 1 lô truy vấn Nhóm Cũ Luồng Bán để đo độ dài kịch bản xấu nhất. */
 export const WORST_CASE_PO_BATCH_SIZE = 300;
+
+/** Số lượng SO tối đa của 1 lô truy vấn Nhóm Cũ Luồng Trả để đo độ dài kịch bản xấu nhất. */
+export const WORST_CASE_SO_BATCH_SIZE = 150;
 
 const WORST_CASE_PO_NUMBERS: readonly number[] = Array.from(
   { length: WORST_CASE_PO_BATCH_SIZE },
   (_, index) => 1_000_000 + index,
 );
 
+const WORST_CASE_SO_NUMBERS: readonly number[] = Array.from(
+  { length: WORST_CASE_SO_BATCH_SIZE },
+  (_, index) => 100_000 + index,
+);
 const ALLOWED_SCHEMAS: Record<string, true> = {
   [SAP_SCHEMA_TTVH.toLowerCase()]: true,
   [SAP_SCHEMA_KBMD.toLowerCase()]: true,
@@ -73,8 +80,11 @@ const FROM_CLAUSE_TERMINATORS: Record<string, true> = {
 
 export interface RenderSqlParams {
   readonly dateFrom: string;
-  readonly brand: string;
+  readonly dateTo?: string;
+  readonly brand?: string;
+  readonly autoDateUpper?: boolean;
   readonly poNumbers?: readonly number[];
+  readonly soNumbers?: readonly number[];
 }
 
 export interface StaticCheckSteps {
@@ -142,61 +152,65 @@ export function computeSqlHash(sqlText: string): string {
 }
 
 /**
- * Bung các biến runtime (`{d}`, `{br}`, `{po_filter}`, `{brand}`, `{date_cond}`)
- * trong 1 lượt regex duy nhất sau khi đã kiểm tra nghiêm ngặt định dạng tham số.
+ * Bung các biến runtime (`{d}`, `{br}`, `{po_filter}`, `{brand_cond}`, `{date_cond}`)
+ * trong 1 lượt regex duy nhất + áp dụng `applyDateTo` sau khi đã kiểm tra nghiêm ngặt định dạng tham số.
  */
 export function expandCatalogTemplate(
   sqlText: string,
   params: RenderSqlParams,
 ): string {
-  const { dateFrom, brand, poNumbers } = params;
-  assertSapDate(dateFrom);
-  assertSapBrand(brand);
-  if (poNumbers !== undefined) {
-    assertPoNumbers(poNumbers);
+  const {
+    dateFrom,
+    dateTo,
+    brand = '',
+    autoDateUpper = true,
+    poNumbers,
+    soNumbers,
+  } = params;
+  const docNumbers = soNumbers ?? poNumbers;
+  assertSapDateRange(dateFrom, dateTo);
+  const normalizedBrand =
+    brand.trim().toUpperCase() === 'ALL' ? '' : brand.trim();
+  assertSapBrand(normalizedBrand, { allowEmpty: true });
+  if (docNumbers !== undefined) {
+    assertPoNumbers(docNumbers);
   }
 
-  const isAllBrand = brand.toUpperCase() === 'ALL';
-  const br = isAllBrand
-    ? `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" IS NOT NULL`
-    : `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${brand}'`;
+  const br = normalizedBrand
+    ? `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store" AND W."U_Brand" = '${normalizedBrand}'`
+    : `JOIN ${SAP_SCHEMA_TTVH}.OWHS W ON W."WhsCode" = P."U_Store"`;
+  const brandCond = normalizedBrand
+    ? ` AND W."U_Brand" = '${normalizedBrand}'`
+    : '';
   const poFilter =
-    poNumbers !== undefined
-      ? `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocNum" IN (${poNumbers.join(', ')})`
+    docNumbers !== undefined
+      ? `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocNum" IN (${docNumbers.join(', ')})`
       : `P."CardCode" = '${SALES_PO_VENDOR_CODE}' AND P."CANCELED" = 'N' AND P."DocDate" >= '${dateFrom}'`;
   const dateCond =
-    poNumbers !== undefined
-      ? `P."DocNum" IN (${poNumbers.join(', ')})`
-      : `P."DocDate" >= '${dateFrom}'`;
-
-  let preparedSql = sqlText;
-  if (isAllBrand) {
-    preparedSql = preparedSql
-      .replace(/([A-Za-z0-9_."]*?"U_Brand")\s*=\s*'\{brand\}'/gi, '$1 IS NOT NULL')
-      .replace(/'\{brand\}'\s*=\s*([A-Za-z0-9_."]*?"U_Brand")/gi, '$1 IS NOT NULL');
-    if (preparedSql.includes('{brand}')) {
-      throw new BadRequestException(
-        'Câu truy vấn chứa biến {brand} không tương thích với chế độ Tất cả thương hiệu (ALL); yêu cầu mẫu W."U_Brand" = \'{brand}\'',
-      );
-    }
-  }
+    docNumbers !== undefined
+      ? `S."DocNum" IN (${docNumbers.join(', ')})`
+      : `S."DocDate" >= '${dateFrom}'`;
 
   const replacements: Record<string, string> = {
     '{d}': dateFrom,
     '{br}': br,
     '{po_filter}': poFilter,
-    '{brand}': brand,
+    '{brand_cond}': brandCond,
     '{date_cond}': dateCond,
   };
 
-  return preparedSql.replace(
-    /\{(d|br|po_filter|brand|date_cond)\}/g,
+  const rendered = sqlText.replace(
+    /\{(d|br|po_filter|brand_cond|date_cond)\}/g,
     (match) => replacements[match] ?? match,
   );
+
+  return autoDateUpper && docNumbers === undefined && dateTo
+    ? applyDateTo(rendered, dateFrom, dateTo)
+    : rendered;
 }
 
 /**
- * Kiểm tra tham số runtime, bung biến 1 lượt và bọc vào `OPENQUERY(hana_mc, '...')`.
+ * Kiểm tra tham số runtime, bung biến 1 lượt + `applyDateTo` và bọc vào `OPENQUERY(hana_mc, '...')`.
  */
 export function renderCatalogSql(
   sqlText: string,
@@ -507,10 +521,11 @@ export function validateQueryStatic(
   // -------------------------------------------------------------------------
   const sampleExpanded = expandCatalogTemplate(normalized, {
     dateFrom: MONITOR_DEFAULT_DATE,
+    dateTo: '20261029',
     brand: MONITOR_DEFAULT_BRAND,
+    autoDateUpper: entry.autoDateUpper,
   });
   const lexed = lexSql(sampleExpanded);
-
   let readOnlySelectOk = true;
   if (!normalized) {
     readOnlySelectOk = false;
@@ -625,28 +640,46 @@ export function validateQueryStatic(
   }
 
   // -------------------------------------------------------------------------
-  // Bước 4: Kiểm tra độ dài OPENQUERY ở kịch bản lô 300 PO (7 chữ số) <= 7800 ký tự
+  // Bước 4: Kiểm tra độ dài OPENQUERY ở kịch bản xấu nhất (lô 300 PO cho Bán / 150 SO cho Trả & chế độ BETWEEN) <= 7800 ký tự
   // -------------------------------------------------------------------------
-  const worstCaseExpanded = expandCatalogTemplate(normalized, {
+  const batchDocNumbers =
+    entry.flow === 'tra' ? WORST_CASE_SO_NUMBERS : WORST_CASE_PO_NUMBERS;
+  const batchExpanded = expandCatalogTemplate(normalized, {
     dateFrom: MONITOR_DEFAULT_DATE,
+    dateTo: '20261029',
     brand: MONITOR_DEFAULT_BRAND,
-    poNumbers: WORST_CASE_PO_NUMBERS,
+    autoDateUpper: entry.autoDateUpper,
+    poNumbers: batchDocNumbers,
   });
-  const escapedInner = worstCaseExpanded.trim().replaceAll("'", "''");
-  const worstCaseOpenQueryLength = escapedInner.length;
+  const dateRangeExpanded = expandCatalogTemplate(normalized, {
+    dateFrom: MONITOR_DEFAULT_DATE,
+    dateTo: '20261029',
+    brand: MONITOR_DEFAULT_BRAND,
+    autoDateUpper: entry.autoDateUpper,
+  });
+  const escapedBatchLen = batchExpanded.trim().replaceAll("'", "''").length;
+  const escapedRangeLen = dateRangeExpanded.trim().replaceAll("'", "''").length;
+  const worstCaseOpenQueryLength = Math.max(escapedBatchLen, escapedRangeLen);
   let openQueryLengthOk = true;
 
   if (worstCaseOpenQueryLength > OPENQUERY_SAFE_MAX_LENGTH) {
     openQueryLengthOk = false;
     errors.push(
-      `Độ dài câu truy vấn trong OPENQUERY khi chạy lô ${WORST_CASE_PO_BATCH_SIZE} PO là ${worstCaseOpenQueryLength} ký tự, vượt giới hạn an toàn ${OPENQUERY_SAFE_MAX_LENGTH} ký tự`,
+      `Độ dài câu truy vấn trong OPENQUERY ở kịch bản dài nhất là ${worstCaseOpenQueryLength} ký tự, vượt giới hạn an toàn ${OPENQUERY_SAFE_MAX_LENGTH} ký tự`,
     );
   } else {
-    // Đảm bảo hàm renderCatalogSql chạy thành công với kịch bản 300 PO
     renderCatalogSql(normalized, {
       dateFrom: MONITOR_DEFAULT_DATE,
+      dateTo: '20261029',
       brand: MONITOR_DEFAULT_BRAND,
-      poNumbers: WORST_CASE_PO_NUMBERS,
+      autoDateUpper: entry.autoDateUpper,
+      poNumbers: batchDocNumbers,
+    });
+    renderCatalogSql(normalized, {
+      dateFrom: MONITOR_DEFAULT_DATE,
+      dateTo: '20261029',
+      brand: MONITOR_DEFAULT_BRAND,
+      autoDateUpper: entry.autoDateUpper,
     });
   }
 

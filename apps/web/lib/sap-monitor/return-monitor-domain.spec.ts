@@ -75,7 +75,7 @@ describe('return-monitor-domain', () => {
     });
     expect(moiGrid.rows).toHaveLength(2);
     expect(moiGrid.rows.every((r) => r[0] === 'Mới')).toBe(true);
-    expect(moiGrid.title).toBe('Danh sách PO trả hàng (2)');
+    expect(moiGrid.title).toBe('Danh sách SO trả hàng (2)');
 
     const cuGrid = resolveReturnGridData({
       lists,
@@ -107,7 +107,7 @@ describe('return-monitor-domain', () => {
     expect(getReturnViewRowCount(lists, 'ar_noinv', 'tatCa')).toBe(2);
   });
 
-  it('Test Case 2: Lọc dữ liệu theo statusFilter khi ở chế độ po', () => {
+  it('Test Case 2: Lọc dữ liệu theo statusFilter khi ở chế độ danh sách SO', () => {
     const lists = makeMockReturnLists();
 
     const filtered = resolveReturnGridData({
@@ -119,8 +119,8 @@ describe('return-monitor-domain', () => {
 
     expect(filtered.rows).toHaveLength(1);
     expect(filtered.rows[0]?.[4]).toBe(1001);
-    expect(filtered.title).toBe(`Danh sách PO trả hàng (1) – ${RST_NO_SO}`);
-    expect(filtered.drilldownTitle).toBe(`${RST_NO_SO} (1 PO)`);
+    expect(filtered.title).toBe(`Danh sách SO trả hàng (1) – ${RST_NO_SO}`);
+    expect(filtered.drilldownTitle).toBe(`${RST_NO_SO} (1 SO)`);
   });
 
   it('Test Case 3: Chuyển đổi qua lại giữa định dạng Date Input YYYY-MM-DD và SAP Date YYYYMMDD', () => {
@@ -130,16 +130,20 @@ describe('return-monitor-domain', () => {
     expect(dateInputToSapDate('2019-12-31')).toBe('');
     expect(getYesterdaySapDate(new Date('2026-10-21T08:00:00.000Z'))).toBe('20261020');
     expect(formatReturnGeneratedTime('2026-10-21T08:43:36.000Z')).toBe('15:43:36');
-    expect(formatReturnScopeLine('20261007', '5001')).toContain(
-      'từ 07/10/2026, brand 5001 + cửa hàng pilot',
+    expect(formatReturnScopeLine('20261007', '5001', '20261028')).toContain(
+      'từ 07/10/2026 đến 28/10/2026, brand 5001 + cửa hàng pilot',
     );
     expect(formatReturnScopeLine('20261007', 'ALL')).toContain(
       'từ 07/10/2026, tất cả thương hiệu + cửa hàng pilot',
     );
+    expect(formatReturnScopeLine('20261007', '')).toContain(
+      'từ 07/10/2026, tất cả thương hiệu + cửa hàng pilot',
+    );
     expect(formatSapCell(1250)).toBe('1,250');
     expect(RETURN_BRAND_OPTIONS).toHaveLength(8);
+    expect(RETURN_CHAIN_COLUMNS).toHaveLength(31);
+    expect(RETURN_AR_NOINV_COLS).toHaveLength(19);
   });
-
   it('Test Case 4: Xử lý thông báo lỗi tiếng Việt thân thiện khi mã lỗi là 503, 403 hoặc chuỗi thông báo kết nối thất bại', () => {
     expect(getReturnMonitorErrorMessage(new ApiError(503, 'HTTP 503'))).toBe(
       'Chưa cấu hình kết nối SAP, liên hệ admin',

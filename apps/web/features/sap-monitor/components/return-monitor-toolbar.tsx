@@ -28,6 +28,8 @@ import { cn } from '@/lib/utils';
 export interface ReturnMonitorToolbarProps {
   dateFrom: string;
   onDateFromChange: (value: string) => void;
+  dateTo?: string;
+  onDateToChange?: (value: string) => void;
   brand: string;
   onBrandChange: (value: string) => void;
   onReload: () => void;
@@ -42,6 +44,8 @@ export interface ReturnMonitorToolbarProps {
 export function ReturnMonitorToolbar({
   dateFrom,
   onDateFromChange,
+  dateTo,
+  onDateToChange,
   brand,
   onBrandChange,
   onReload,
@@ -88,6 +92,24 @@ export function ReturnMonitorToolbar({
           className="h-8 w-36 font-mono text-xs"
         />
       </div>
+
+      {dateTo !== undefined && onDateToChange && (
+        <div className="flex items-center gap-2">
+          <Label htmlFor="return-monitor-date-to" className="whitespace-nowrap text-xs font-medium">
+            Đến ngày:
+          </Label>
+          <Input
+            id="return-monitor-date-to"
+            type="date"
+            value={sapDateToDateInput(dateTo)}
+            onChange={(e) => {
+              const nextSap = dateInputToSapDate(e.target.value);
+              if (nextSap) onDateToChange(nextSap);
+            }}
+            className="h-8 w-36 font-mono text-xs"
+          />
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <Label htmlFor="return-monitor-brand" className="whitespace-nowrap text-xs font-medium">

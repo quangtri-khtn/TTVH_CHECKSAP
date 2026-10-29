@@ -20,8 +20,13 @@ import {
   type CohortFilter,
   formatSapCell,
 } from '@/lib/sap-monitor/sales-monitor-domain';
+import {
+  SALES_CHAIN_QUERY_KEYS,
+  SALES_OLD_COHORT_QUERY_KEYS,
+  getSalesFunnelStepQueryKeys,
+} from '@/lib/sap-monitor/sap-query-tag-map';
 import { cn } from '@/lib/utils';
-
+import { SapQueryTagBar } from './sap-query-tag-bar';
 export interface SalesConversionFunnelTableProps {
   funnel: readonly SalesFunnelStepDto[] | undefined;
   activeFunnelStepIndex: number | null;
@@ -42,9 +47,19 @@ export function SalesConversionFunnelTable({
   return (
     <section className="flex flex-col gap-2.5 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold text-foreground">
-          Phễu chuyển đổi từng bước (nhấp một dòng để xem chứng từ chưa thành công)
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xs font-semibold text-foreground">
+            Phễu chuyển đổi từng bước (nhấp một dòng để xem chứng từ chưa thành công)
+          </h2>
+          <SapQueryTagBar
+            label="SQL:"
+            queryKeys={
+              selectedCohort === 'moi'
+                ? SALES_CHAIN_QUERY_KEYS
+                : [...SALES_CHAIN_QUERY_KEYS, ...SALES_OLD_COHORT_QUERY_KEYS]
+            }
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           <Label className="whitespace-nowrap text-xs font-medium text-muted-foreground">
@@ -130,7 +145,10 @@ export function SalesConversionFunnelTable({
                     )}
                   >
                     <TableCell className="border-r px-3 py-2.5 align-top whitespace-pre-line leading-relaxed">
-                      {step.label}
+                      <div className="flex flex-col gap-1">
+                        <SapQueryTagBar queryKeys={getSalesFunnelStepQueryKeys(idx)} />
+                        <span>{step.label}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="border-r px-3 py-2.5 align-top text-center">
                       <Badge variant="outline" className="font-mono text-[11px]">

@@ -7,14 +7,17 @@ import {
   RET_CHAIN_COLUMNS,
   RET_FUNNEL_HEADERS,
   RET_STATUS_ORDER,
+  RST_AP_NO_INV,
   RST_AR_NO_INV,
   RST_FULL,
+  RST_MANUAL_SO,
   RST_NO_AP,
   RST_NO_AR,
   RST_NO_AR_WAIT_SHIP,
   RST_NO_GRPO,
   RST_NO_GRPO_WAIT_SHIP,
-  RST_NO_SO,
+  RST_NO_PO,
+  RST_SO_CANCELED,
   assembleReturnChain,
   buildReturnArNoInv,
   buildReturnFunnel,
@@ -26,38 +29,39 @@ function createBaseQueryResults(
   overrides: Partial<Record<ReturnListQueryKey, SapQueryResult>> = {},
 ): Record<ReturnListQueryKey, SapQueryResult> {
   const empty: Record<ReturnListQueryKey, SapQueryResult> = {
-    po: {
-      columns: [
-        'PO Number',
-        'PO DocDate',
-        'PO CreateDate',
-        'Store',
-        'Brand',
-        'MC Docnum',
-        'Kho PO min',
-        'Kho PO max',
-      ],
-      rows: [],
-    },
     so: {
       columns: [
-        'PO Number',
         'SO Number',
         'SO DocDate',
         'SO CreateDate',
+        'SO Canceled',
+        'Store',
+        'Brand',
+        'MC Docnum',
         'SO ShipDate',
         'Kho SO min',
         'Kho SO max',
       ],
       rows: [],
     },
+    po: {
+      columns: [
+        'SO Number',
+        'PO Number',
+        'PO DocDate',
+        'PO CreateDate',
+        'Kho PO min',
+        'Kho PO max',
+      ],
+      rows: [],
+    },
     do: {
-      columns: ['PO Number', 'DO Number'],
+      columns: ['SO Number', 'DO Number'],
       rows: [],
     },
     ar: {
       columns: [
-        'PO Number',
+        'SO Number',
         'AR Number',
         'AR DocDate',
         'AR CreateDate',
@@ -68,7 +72,7 @@ function createBaseQueryResults(
     },
     grpo: {
       columns: [
-        'PO Number',
+        'SO Number',
         'GRPO Number',
         'GRPO DocDate',
         'Kho GRPO min',
@@ -77,7 +81,13 @@ function createBaseQueryResults(
       rows: [],
     },
     ap: {
-      columns: ['PO Number', 'GRPO Number', 'AP Number', 'AP DocDate'],
+      columns: [
+        'SO Number',
+        'GRPO Number',
+        'AP Number',
+        'AP DocDate',
+        'AP Invoice No',
+      ],
       rows: [],
     },
     whs: {
@@ -88,28 +98,30 @@ function createBaseQueryResults(
   return { ...empty, ...overrides };
 }
 
-describe('Return Monitor Pure Domain Logic', () => {
+describe('Return Monitor Pure Domain Logic (SO-Based v1.1)', () => {
   const today = '2026-10-21';
   const dateFrom = '20261007';
 
-  it('Test Case 1: deduplicates POs in ascending numeric order keeping the first occurrence (Parity Trap 1)', () => {
+  it('Test Case 1: deduplicates SOs in ascending numeric order keeping the first occurrence and computes Nguon SO & SO Huy', () => {
     const results = createBaseQueryResults({
-      po: {
+      so: {
         columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
+          'SO Number',
+          'SO DocDate',
+          'SO CreateDate',
+          'SO Canceled',
           'Store',
           'Brand',
           'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
+          'SO ShipDate',
+          'Kho SO min',
+          'Kho SO max',
         ],
         rows: [
-          [1002, '2026-10-10', '2026-10-10', 'MC001', '5001', 'MC001-FIRST', 'K01', 'K01'],
-          [999, '2026-10-01', '2026-10-01', 'MC011', '5001', 'MC011-OLD', 'K02', 'K02'],
-          [1002, '2026-10-11', '2026-10-11', 'MC073', '5001', 'MC001-SECOND', 'K03', 'K03'],
-          [1001, '2026-10-08', '2026-10-08', 'MC013', '5001', 'MC013-NEW', 'K01', 'K02'],
+          [5002, '2026-10-10', '2026-10-10', 'N', 'MC001', '5001', 'MC001-FIRST', '2026-10-12', 'T01', 'T01'],
+          [4999, '2026-10-01', '2026-10-01', 'Y', 'MC011', '5001', 'MC011-OLD', '2026-10-05', 'T02', 'T02'],
+          [5002, '2026-10-11', '2026-10-11', 'N', 'MC073', '5001', 'MC001-SECOND', '2026-10-13', 'T03', 'T03'],
+          [5001, '2026-10-08', '2026-10-08', 'N', 'MC013', '5001', null, '2026-10-10', 'T01', 'T02'],
         ],
       },
     });
@@ -117,44 +129,56 @@ describe('Return Monitor Pure Domain Logic', () => {
     const assembled = assembleReturnChain(results, dateFrom, today);
 
     expect(assembled.table.columns).toEqual([...RET_CHAIN_COLUMNS]);
-    expect(assembled.rows.map((r) => r['PO Number'])).toEqual([999, 1001, 1002]);
+    expect(assembled.table.columns).toHaveLength(31);
+    expect(assembled.rows.map((r) => r['SO Number'])).toEqual([4999, 5001, 5002]);
     expect(assembled.rows.map((r) => r['Nhom'])).toEqual([NHOM_CU, NHOM_MOI, NHOM_MOI]);
 
-    const po1002 = assembled.rows.find((r) => r['PO Number'] === 1002);
-    expect(po1002?.['Store']).toBe('MC001');
-    expect(po1002?.['MC Docnum']).toBe('MC001-FIRST');
-    expect(po1002?.['Kho nhan PO (KBMD)']).toBe('K01');
+    const so4999 = assembled.rows.find((r) => r['SO Number'] === 4999)!;
+    expect(so4999['SO Huy']).toBe('Đã hủy');
+    expect(so4999['Trang thai chuoi chung tu']).toBe(RST_SO_CANCELED);
+
+    const so5001 = assembled.rows.find((r) => r['SO Number'] === 5001)!;
+    expect(so5001['Nguon SO']).toBe('THỦ CÔNG');
+    expect(so5001['Trang thai chuoi chung tu']).toBe(RST_MANUAL_SO);
+
+    const so5002 = assembled.rows.find((r) => r['SO Number'] === 5002)!;
+    expect(so5002['Store']).toBe('MC001');
+    expect(so5002['MC Docnum']).toBe('MC001-FIRST');
+    expect(so5002['Nguon SO']).toBe('AUTO');
+    expect(so5002['Kho xuat SO (TTVH)']).toBe('T01');
+    expect(so5002['Trang thai chuoi chung tu']).toBe(RST_NO_PO);
   });
 
-  it('Test Case 2: maps TTVH stores (DB=T) and KBMD warehouses (DB=K) accurately (Parity Trap 2)', () => {
+  it('Test Case 2: maps TTVH stores (DB=T) and KBMD warehouses (DB=K) accurately', () => {
     const results = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-        ],
-        rows: [
-          [2001, '2026-10-12', '2026-10-12', 'MC001', '5001', 'MC001-01', 'DC002', 'DC001'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
         ],
         rows: [
-          [2001, 5001, '2026-10-12', '2026-10-12', '2026-10-15', 'WH_T2', 'WH_T1'],
+          [5001, '2026-10-12', '2026-10-12', 'N', 'MC001', '5001', 'MC001-01', '2026-10-15', 'WH_T2', 'WH_T1'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [5001, 2001, '2026-10-12', '2026-10-12', 'DC002', 'DC001'],
         ],
       },
       whs: {
@@ -177,47 +201,53 @@ describe('Return Monitor Pure Domain Logic', () => {
     expect(rows[0]?.['Kho xuat SO (TTVH)']).toBe('WH_T1, WH_T2');
   });
 
-  it('Test Case 3: uses SO ShipDate > today for both step 2 and step 4 wait statuses, ignoring AR ShipDate (Parity Trap 3)', () => {
+  it('Test Case 3: uses SO ShipDate > today for step 2 and step 4 wait statuses and excludes statuses 0 and 8 from 6-step funnel', () => {
     const results = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-        ],
-        rows: [
-          // PO 3001: Có SO (SO ShipDate > today), chưa có A/R -> RST_NO_AR_WAIT_SHIP
-          [3001, '2026-10-15', '2026-10-15', 'MC001', '5001', 'MC-3001', 'DC01', 'DC01'],
-          // PO 3002: Có SO (SO ShipDate > today), có A/R đã xuất HĐ (AR ShipDate rỗng), chưa có GRPO -> RST_NO_GRPO_WAIT_SHIP
-          [3002, '2026-10-15', '2026-10-15', 'MC001', '5001', 'MC-3002', 'DC01', 'DC01'],
-          // PO 3003: Có SO (SO ShipDate <= today), có A/R đã xuất HĐ (AR ShipDate > today), chưa có GRPO -> vẫn là RST_NO_GRPO vì xét SO ShipDate
-          [3003, '2026-10-15', '2026-10-15', 'MC001', '5001', 'MC-3003', 'DC01', 'DC01'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
         ],
         rows: [
-          [3001, 6001, '2026-10-15', '2026-10-15', '2026-10-25', 'MC001', 'MC001'],
-          [3002, 6002, '2026-10-15', '2026-10-15', '2026-10-24', 'MC001', 'MC001'],
-          [3003, 6003, '2026-10-15', '2026-10-15', '2026-10-20', 'MC001', 'MC001'],
+          // SO 6000: Đã hủy (trạng thái 0, loại khỏi phễu)
+          [6000, '2026-10-15', '2026-10-15', 'Y', 'MC001', '5001', 'MC-6000', '2026-10-20', 'MC001', 'MC001'],
+          // SO 6001: Có PO, SO ShipDate > today, chưa có A/R -> RST_NO_AR_WAIT_SHIP (2a)
+          [6001, '2026-10-15', '2026-10-15', 'N', 'MC001', '5001', 'MC-6001', '2026-10-25', 'MC001', 'MC001'],
+          // SO 6002: Có PO, SO ShipDate > today, có A/R đã xuất HĐ, chưa có GRPO -> RST_NO_GRPO_WAIT_SHIP (4a)
+          [6002, '2026-10-15', '2026-10-15', 'N', 'MC001', '5001', 'MC-6002', '2026-10-24', 'MC001', 'MC001'],
+          // SO 6003: Có PO, SO ShipDate <= today, có A/R đã xuất HĐ (AR ShipDate > today), chưa có GRPO -> RST_NO_GRPO (4)
+          [6003, '2026-10-15', '2026-10-15', 'N', 'MC001', '5001', 'MC-6003', '2026-10-20', 'MC001', 'MC001'],
+          // SO 6004: Thủ công không có MC Docnum, không có PO -> RST_MANUAL_SO (8, loại khỏi phễu)
+          [6004, '2026-10-15', '2026-10-15', 'N', 'MC001', '5001', null, '2026-10-20', 'MC001', 'MC001'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [6000, 3000, '2026-10-15', '2026-10-15', 'DC01', 'DC01'],
+          [6001, 3001, '2026-10-15', '2026-10-15', 'DC01', 'DC01'],
+          [6002, 3002, '2026-10-15', '2026-10-15', 'DC01', 'DC01'],
+          [6003, 3003, '2026-10-15', '2026-10-15', 'DC01', 'DC01'],
         ],
       },
       ar: {
         columns: [
-          'PO Number',
+          'SO Number',
           'AR Number',
           'AR DocDate',
           'AR CreateDate',
@@ -225,82 +255,88 @@ describe('Return Monitor Pure Domain Logic', () => {
           'Invoice No',
         ],
         rows: [
-          [3002, 7002, '2026-10-16', '2026-10-16', null, 'INV-7002'],
-          [3003, 7003, '2026-10-16', '2026-10-16', '2026-10-28', 'INV-7003'],
+          [6002, 7002, '2026-10-16', '2026-10-16', null, 'INV-7002'],
+          [6003, 7003, '2026-10-16', '2026-10-16', '2026-10-28', 'INV-7003'],
         ],
       },
     });
 
     const { rows, arRows, grpoRows } = assembleReturnChain(results, dateFrom, today);
 
-    const po3001 = rows.find((r) => r['PO Number'] === 3001)!;
-    const po3002 = rows.find((r) => r['PO Number'] === 3002)!;
-    const po3003 = rows.find((r) => r['PO Number'] === 3003)!;
+    const so6001 = rows.find((r) => r['SO Number'] === 6001)!;
+    const so6002 = rows.find((r) => r['SO Number'] === 6002)!;
+    const so6003 = rows.find((r) => r['SO Number'] === 6003)!;
 
-    expect(po3001['Trang thai chuoi chung tu']).toBe(RST_NO_AR_WAIT_SHIP);
-    expect(po3001['Ghi chu ShipDate']).toBe(
+    expect(so6001['Trang thai chuoi chung tu']).toBe(RST_NO_AR_WAIT_SHIP);
+    expect(so6001['Ghi chu ShipDate']).toBe(
       'Chờ SO ShipDate 25/10/2026 (chưa đến ngày xuất hàng)',
     );
 
-    expect(po3002['Trang thai chuoi chung tu']).toBe(RST_NO_GRPO_WAIT_SHIP);
-    expect(po3002['Ghi chu ShipDate']).toBe(
+    expect(so6002['Trang thai chuoi chung tu']).toBe(RST_NO_GRPO_WAIT_SHIP);
+    expect(so6002['Ghi chu ShipDate']).toBe(
       'Chờ SO ShipDate 24/10/2026 (chưa đến ngày sync GRPO)',
     );
 
-    expect(po3003['Trang thai chuoi chung tu']).toBe(RST_NO_GRPO);
-    expect(po3003['Ghi chu ShipDate']).toBe(
+    expect(so6003['Trang thai chuoi chung tu']).toBe(RST_NO_GRPO);
+    expect(so6003['Ghi chu ShipDate']).toBe(
       'Đã đến/qua SO ShipDate 20/10/2026 — GRPO chưa có, cần kiểm tra',
     );
 
     const funnel = buildReturnFunnel(rows, arRows, grpoRows, today);
+    expect(funnel).toHaveLength(6);
+
+    // Bước 1: loại SO 6000 (trạng thái 0) và SO 6004 (trạng thái 8) khỏi vin -> vin = 3
+    const step1 = funnel[0]!;
+    expect(step1.vin).toBe(3);
+    expect(step1.ok).toBe(3);
+    expect(step1.autoLabel).toContain(
+      'ngoài ra 1 SO đã hủy nhưng PO KBMD vẫn mở (trạng thái 0), 1 SO thủ công không có PO (trạng thái 8)',
+    );
+
     const step4 = funnel[3]!;
     expect(step4.vin).toBe(2);
     expect(step4.ok).toBe(0);
-    expect(step4.wait).toBe(1); // chỉ PO 3002 có SO ShipDate > today
-    expect(step4.act).toBe(1); // PO 3003 có SO ShipDate <= today dù AR ShipDate > today
+    expect(step4.wait).toBe(1); // chỉ SO 6002 có SO ShipDate > today
+    expect(step4.act).toBe(1); // SO 6003 có SO ShipDate <= today dù AR ShipDate > today
   });
 
-  it('Test Case 4: computes step 2 funnel with unit SO but PO-based vin/ok and "{ok} SO → {n_ar} A/R" label (Parity Trap 4)', () => {
+  it('Test Case 4: computes 6-step funnel including Step 6 (AP -> có Invoice) and statuses 6 vs 7', () => {
     const results = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-        ],
-        rows: [
-          [4001, '2026-10-10', '2026-10-10', 'MC001', '5001', 'MC-1', 'K1', 'K1'],
-          [4002, '2026-10-11', '2026-10-11', 'MC001', '5001', 'MC-2', 'K1', 'K1'],
-          [4003, '2026-10-12', '2026-10-12', 'MC001', '5001', 'MC-3', 'K1', 'K1'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
         ],
         rows: [
-          // PO 4001 có 2 SO và 3 A/R
-          [4001, 501, '2026-10-10', '2026-10-10', '2026-10-12', 'M1', 'M1'],
-          [4001, 502, '2026-10-10', '2026-10-10', '2026-10-12', 'M1', 'M1'],
-          // PO 4002 có 1 SO nhưng chưa có A/R (đã qua ShipDate)
-          [4002, 503, '2026-10-11', '2026-10-11', '2026-10-15', 'M1', 'M1'],
-          // PO 4003 chưa có SO
+          [501, '2026-10-10', '2026-10-10', 'N', 'MC001', '5001', 'MC-1', '2026-10-12', 'M1', 'M1'],
+          [502, '2026-10-11', '2026-10-11', 'N', 'MC001', '5001', 'MC-2', '2026-10-12', 'M1', 'M1'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [501, 4001, '2026-10-10', '2026-10-10', 'K1', 'K1'],
+          [502, 4002, '2026-10-11', '2026-10-11', 'K1', 'K1'],
         ],
       },
       ar: {
         columns: [
-          'PO Number',
+          'SO Number',
           'AR Number',
           'AR DocDate',
           'AR CreateDate',
@@ -308,9 +344,35 @@ describe('Return Monitor Pure Domain Logic', () => {
           'Invoice No',
         ],
         rows: [
-          [4001, 801, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-1'],
-          [4001, 802, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-2'],
-          [4001, 803, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-3'],
+          [501, 801, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-1'],
+          [501, 802, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-2'],
+          [502, 803, '2026-10-12', '2026-10-12', '2026-10-12', 'INV-3'],
+        ],
+      },
+      grpo: {
+        columns: [
+          'SO Number',
+          'GRPO Number',
+          'GRPO DocDate',
+          'Kho GRPO min',
+          'Kho GRPO max',
+        ],
+        rows: [
+          [501, 901, '2026-10-13', 'K1', 'K1'],
+          [502, 902, '2026-10-13', 'K1', 'K1'],
+        ],
+      },
+      ap: {
+        columns: [
+          'SO Number',
+          'GRPO Number',
+          'AP Number',
+          'AP DocDate',
+          'AP Invoice No',
+        ],
+        rows: [
+          [501, 901, 1001, '2026-10-14', 'AP-INV-1'],
+          [502, 902, 1002, '2026-10-14', null],
         ],
       },
     });
@@ -319,56 +381,66 @@ describe('Return Monitor Pure Domain Logic', () => {
     const funnel = buildReturnFunnel(rows, arRows, grpoRows, today);
 
     expect(RET_FUNNEL_HEADERS).toHaveLength(8);
-    expect(funnel).toHaveLength(5);
+    expect(funnel).toHaveLength(6);
+
+    const so501 = rows.find((r) => r['SO Number'] === 501)!;
+    const so502 = rows.find((r) => r['SO Number'] === 502)!;
+    expect(so501['Trang thai chuoi chung tu']).toBe(RST_FULL);
+    expect(so502['Trang thai chuoi chung tu']).toBe(RST_AP_NO_INV);
 
     const step2 = funnel[1]!;
     expect(step2.unit).toBe('SO');
-    expect(step2.vin).toBe(2); // 2 PO có SO (4001, 4002), không phải 3 SO
-    expect(step2.ok).toBe(1); // 1 PO có A/R (4001)
-    expect(step2.okText).toBe('1 SO → 3 A/R');
-    expect(step2.wait).toBe(0);
-    expect(step2.act).toBe(1);
-    expect(step2.rate).toBe('50%');
+    expect(step2.vin).toBe(2);
+    expect(step2.ok).toBe(2);
+    expect(step2.okText).toBe('2 SO → 3 A/R');
+
+    const step6 = funnel[5]!;
+    expect(step6.unit).toBe('SO');
+    expect(step6.vin).toBe(2);
+    expect(step6.ok).toBe(1);
+    expect(step6.act).toBe(1);
+    expect(step6.okText).toBe('1 SO có AP đã có Invoice');
   });
 
-  it('Test Case 5: builds A/R without invoice table with sibling note and sorts by age desc then AR Number asc (Parity Trap 5)', () => {
+  it('Test Case 5: builds 19-column A/R without invoice table with sibling SO note and sorts by age desc then AR Number asc', () => {
     const results = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-        ],
-        rows: [
-          // PO 5001 có 1 A/R đã xuất HĐ (9001) và 1 A/R chưa xuất HĐ (9002) -> PO sang bước 4 (RST_NO_GRPO)
-          [5001, '2026-10-10', '2026-10-10', 'MC001', '5001', 'MC-5001', 'K1', 'K1'],
-          // PO 5002 chỉ có A/R chưa xuất HĐ (9010, 9005) -> PO ở bước 3 (RST_AR_NO_INV)
-          [5002, '2026-10-12', '2026-10-12', 'MC011', '5001', 'MC-5002', 'K1', 'K1'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
         ],
         rows: [
-          [5001, 6001, '2026-10-10', '2026-10-10', '2026-10-12', 'M1', 'M1'],
-          [5002, 6002, '2026-10-12', '2026-10-12', '2026-10-14', 'M1', 'M1'],
+          // SO 6001 có 1 A/R đã xuất HĐ (9001) và 1 A/R chưa xuất HĐ (9002) -> SO sang bước 4 (RST_NO_GRPO)
+          [6001, '2026-10-10', '2026-10-10', 'N', 'MC001', '5001', 'MC-5001', '2026-10-12', 'M1', 'M1'],
+          // SO 6002 chỉ có A/R chưa xuất HĐ (9010, 9005) -> SO ở bước 3 (RST_AR_NO_INV)
+          [6002, '2026-10-12', '2026-10-12', 'N', 'MC011', '5001', 'MC-5002', '2026-10-14', 'M1', 'M1'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [6001, 5001, '2026-10-10', '2026-10-10', 'K1', 'K1'],
+          [6002, 5002, '2026-10-12', '2026-10-12', 'K1', 'K1'],
         ],
       },
       ar: {
         columns: [
-          'PO Number',
+          'SO Number',
           'AR Number',
           'AR DocDate',
           'AR CreateDate',
@@ -376,12 +448,10 @@ describe('Return Monitor Pure Domain Logic', () => {
           'Invoice No',
         ],
         rows: [
-          [5001, 9001, '2026-10-11', '2026-10-11', '2026-10-12', 'HD-9001'],
-          // A/R 9002 tạo ngày 2026-10-18 -> tuổi = 3 ngày
-          [5001, 9002, '2026-10-18', '2026-10-18', '2026-10-18', ''],
-          // A/R 9010 và 9005 cùng tạo ngày 2026-10-15 -> tuổi = 6 ngày
-          [5002, 9010, '2026-10-15', '2026-10-15', '2026-10-15', null],
-          [5002, 9005, '2026-10-15', '2026-10-15', '2026-10-15', '   '],
+          [6001, 9001, '2026-10-11', '2026-10-11', '2026-10-12', 'HD-9001'],
+          [6001, 9002, '2026-10-18', '2026-10-18', '2026-10-18', ''],
+          [6002, 9010, '2026-10-15', '2026-10-15', '2026-10-15', null],
+          [6002, 9005, '2026-10-15', '2026-10-15', '2026-10-15', '   '],
         ],
       },
     });
@@ -391,71 +461,71 @@ describe('Return Monitor Pure Domain Logic', () => {
     const arNoInvTable = recordsToTable(RET_AR_NOINV_COLS, arNoInv);
 
     expect(arNoInvTable.columns).toEqual([...RET_AR_NOINV_COLS]);
+    expect(arNoInvTable.columns).toHaveLength(19);
     expect(arNoInv).toHaveLength(3);
 
-    // Sắp xếp theo tuổi giảm dần (6 ngày trước, 3 ngày sau), cùng tuổi thì AR Number ASCII tăng dần ('9005' trước '9010')
     expect(arNoInv.map((r) => r['AR Number'])).toEqual([9005, 9010, 9002]);
     expect(arNoInv.map((r) => r['Tuoi A/R (ngay)'])).toEqual([6, 6, 3]);
 
-    // A/R 9002 thuộc PO 5001 (đã có 9001 xuất HĐ, trạng thái PO là RST_NO_GRPO != RST_AR_NO_INV)
     const ar9002 = arNoInv[2]!;
-    expect(ar9002['PO con A/R khac da xuat HD']).toBe('9001');
-    expect(ar9002['Trang thai PO']).toBe(RST_NO_GRPO);
+    expect(ar9002['SO con A/R khac da xuat HD']).toBe('9001');
+    expect(ar9002['Trang thai SO']).toBe(RST_NO_GRPO);
     expect(ar9002['Ghi chu']).toBe(
-      'PO đã được xếp vào bước sau vì có A/R khác đã xuất HĐ – A/R này vẫn thiếu HĐ',
+      'SO đã được xếp vào bước sau vì có A/R khác đã xuất HĐ – A/R này vẫn thiếu HĐ',
     );
 
-    // A/R 9005 thuộc PO 5002 (không có A/R nào xuất HĐ, trạng thái PO là RST_AR_NO_INV)
-    expect(arNoInv[0]!['PO con A/R khac da xuat HD']).toBe('');
-    expect(arNoInv[0]!['Trang thai PO']).toBe(RST_AR_NO_INV);
+    expect(arNoInv[0]!['SO con A/R khac da xuat HD']).toBe('');
+    expect(arNoInv[0]!['Trang thai SO']).toBe(RST_AR_NO_INV);
     expect(arNoInv[0]!['Ghi chu']).toBe('');
   });
 
-  it('Test Case 6: computes buildReturnStatusSummary (problems, arNoInvCount, waiting, backlog) and countReturnStatusByCohort accurately', () => {
+  it('Test Case 6: computes buildReturnStatusSummary and countReturnStatusByCohort across all 11 statuses', () => {
     const results = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-        ],
-        rows: [
-          // Nhóm mới: 1 RST_NO_SO (problem), 1 RST_NO_AR_WAIT_SHIP (waiting), 1 RST_NO_AP (problem), 1 RST_FULL
-          [6001, '2026-10-10', '2026-10-10', 'MC001', '5001', 'M-1', 'K1', 'K1'],
-          [6002, '2026-10-11', '2026-10-11', 'MC001', '5001', 'M-2', 'K1', 'K1'],
-          [6003, '2026-10-12', '2026-10-12', 'MC001', '5001', 'M-3', 'K1', 'K1'],
-          [6004, '2026-10-13', '2026-10-13', 'MC001', '5001', 'M-4', 'K1', 'K1'],
-          // Nhóm cũ: 1 RST_NO_AR (backlog), 1 RST_FULL (không tính backlog)
-          [5901, '2026-10-01', '2026-10-01', 'MC001', '5001', 'C-1', 'K1', 'K1'],
-          [5902, '2026-10-02', '2026-10-02', 'MC001', '5001', 'C-2', 'K1', 'K1'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
         ],
         rows: [
-          [6002, 7002, '2026-10-11', '2026-10-11', '2026-10-25', 'M1', 'M1'],
-          [6003, 7003, '2026-10-12', '2026-10-12', '2026-10-15', 'M1', 'M1'],
-          [6004, 7004, '2026-10-13', '2026-10-13', '2026-10-15', 'M1', 'M1'],
-          [5901, 6901, '2026-10-08', '2026-10-08', '2026-10-10', 'M1', 'M1'],
-          [5902, 6902, '2026-10-08', '2026-10-08', '2026-10-10', 'M1', 'M1'],
+          // Nhóm mới: 1 RST_NO_PO (problem), 1 RST_NO_AR_WAIT_SHIP (waiting), 1 RST_NO_AP (problem), 1 RST_FULL, 1 RST_MANUAL_SO (tham khảo)
+          [7001, '2026-10-10', '2026-10-10', 'N', 'MC001', '5001', 'M-1', '2026-10-15', 'M1', 'M1'],
+          [7002, '2026-10-11', '2026-10-11', 'N', 'MC001', '5001', 'M-2', '2026-10-25', 'M1', 'M1'],
+          [7003, '2026-10-12', '2026-10-12', 'N', 'MC001', '5001', 'M-3', '2026-10-15', 'M1', 'M1'],
+          [7004, '2026-10-13', '2026-10-13', 'N', 'MC001', '5001', 'M-4', '2026-10-15', 'M1', 'M1'],
+          [7005, '2026-10-14', '2026-10-14', 'N', 'MC001', '5001', null, '2026-10-15', 'M1', 'M1'],
+          // Nhóm cũ: 1 RST_NO_AR (backlog), 1 RST_FULL
+          [6901, '2026-10-01', '2026-10-01', 'N', 'MC001', '5001', 'C-1', '2026-10-10', 'M1', 'M1'],
+          [6902, '2026-10-02', '2026-10-02', 'N', 'MC001', '5001', 'C-2', '2026-10-10', 'M1', 'M1'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [7002, 6002, '2026-10-11', '2026-10-11', 'K1', 'K1'],
+          [7003, 6003, '2026-10-12', '2026-10-12', 'K1', 'K1'],
+          [7004, 6004, '2026-10-13', '2026-10-13', 'K1', 'K1'],
+          [6901, 5901, '2026-10-01', '2026-10-01', 'K1', 'K1'],
+          [6902, 5902, '2026-10-02', '2026-10-02', 'K1', 'K1'],
         ],
       },
       ar: {
         columns: [
-          'PO Number',
+          'SO Number',
           'AR Number',
           'AR DocDate',
           'AR CreateDate',
@@ -463,31 +533,37 @@ describe('Return Monitor Pure Domain Logic', () => {
           'Invoice No',
         ],
         rows: [
-          [6003, 8003, '2026-10-12', '2026-10-12', '2026-10-15', 'INV-8003'],
-          [6003, 80031, '2026-10-12', '2026-10-12', '2026-10-15', null],
-          [6004, 8004, '2026-10-13', '2026-10-13', '2026-10-15', 'INV-8004'],
-          [5902, 7902, '2026-10-09', '2026-10-09', '2026-10-10', 'INV-7902'],
+          [7003, 8003, '2026-10-12', '2026-10-12', '2026-10-15', 'INV-8003'],
+          [7003, 80031, '2026-10-12', '2026-10-12', '2026-10-15', null],
+          [7004, 8004, '2026-10-13', '2026-10-13', '2026-10-15', 'INV-8004'],
+          [6902, 7902, '2026-10-09', '2026-10-09', '2026-10-10', 'INV-7902'],
         ],
       },
       grpo: {
         columns: [
-          'PO Number',
+          'SO Number',
           'GRPO Number',
           'GRPO DocDate',
           'Kho GRPO min',
           'Kho GRPO max',
         ],
         rows: [
-          [6003, 9003, '2026-10-14', 'K1', 'K1'],
-          [6004, 9004, '2026-10-14', 'K1', 'K1'],
-          [5902, 8902, '2026-10-10', 'K1', 'K1'],
+          [7003, 9003, '2026-10-14', 'K1', 'K1'],
+          [7004, 9004, '2026-10-14', 'K1', 'K1'],
+          [6902, 8902, '2026-10-10', 'K1', 'K1'],
         ],
       },
       ap: {
-        columns: ['PO Number', 'GRPO Number', 'AP Number', 'AP DocDate'],
+        columns: [
+          'SO Number',
+          'GRPO Number',
+          'AP Number',
+          'AP DocDate',
+          'AP Invoice No',
+        ],
         rows: [
-          [6004, 9004, 10004, '2026-10-15'],
-          [5902, 8902, 10902, '2026-10-11'],
+          [7004, 9004, 10004, '2026-10-15', 'AP-INV-1'],
+          [6902, 8902, 10902, '2026-10-11', 'AP-INV-2'],
         ],
       },
     });
@@ -496,93 +572,77 @@ describe('Return Monitor Pure Domain Logic', () => {
     const arNoInvRows = buildReturnArNoInv(rows, arRows, today);
     const summary = buildReturnStatusSummary(rows, arNoInvRows);
 
-    expect(RET_STATUS_ORDER).toHaveLength(8);
+    expect(RET_STATUS_ORDER).toHaveLength(11);
     expect(summary).toEqual({
-      problems: 2, // PO 6001 (RST_NO_SO) + PO 6003 (RST_NO_AP)
+      problems: 2, // SO 7001 (RST_NO_PO) + SO 7003 (RST_NO_AP)
       arNoInvCount: 1, // A/R 80031
-      waiting: 1, // PO 6002 (RST_NO_AR_WAIT_SHIP)
-      backlog: 1, // PO 5901 (RST_NO_AR, nhóm Cũ)
+      waiting: 1, // SO 7002 (RST_NO_AR_WAIT_SHIP)
+      backlog: 1, // SO 6901 (RST_NO_AR, nhóm Cũ)
     });
 
     const moiCounts = countReturnStatusByCohort(rows, NHOM_MOI);
     expect(moiCounts).toEqual({
-      po_no_so: 1,
+      so_canceled: 0,
+      so_no_po: 1,
       so_no_ar: 0,
       so_no_ar_wait: 1,
       ar_no_inv: 0,
       ar_no_grpo: 0,
       ar_no_grpo_wait: 0,
       grpo_no_ap: 1,
-      po_full: 1,
+      ap_no_inv: 0,
+      so_full: 1,
+      so_manual: 1,
     });
 
     const cuCounts = countReturnStatusByCohort(rows, NHOM_CU);
-    expect(cuCounts).toEqual({
-      po_no_so: 0,
-      so_no_ar: 1,
-      so_no_ar_wait: 0,
-      ar_no_inv: 0,
-      ar_no_grpo: 0,
-      ar_no_grpo_wait: 0,
-      grpo_no_ap: 0,
-      po_full: 1,
-    });
-
-    const allCounts = countReturnStatusByCohort(rows, null);
-    expect(allCounts.po_full).toBe(2);
-    expect(allCounts.po_no_so + allCounts.so_no_ar + allCounts.so_no_ar_wait + allCounts.grpo_no_ap + allCounts.po_full).toBe(6);
-
-    const po6003 = rows.find((r) => r['PO Number'] === 6003);
-    expect(po6003?.['Trang thai chuoi chung tu']).toBe(RST_NO_AP);
-    const po6004 = rows.find((r) => r['PO Number'] === 6004);
-    expect(po6004?.['Trang thai chuoi chung tu']).toBe(RST_FULL);
-    const po6001 = rows.find((r) => r['PO Number'] === 6001);
-    expect(po6001?.['Trang thai chuoi chung tu']).toBe(RST_NO_SO);
-    const po5901 = rows.find((r) => r['PO Number'] === 5901);
-    expect(po5901?.['Trang thai chuoi chung tu']).toBe(RST_NO_AR);
+    expect(cuCounts.so_no_ar).toBe(1);
+    expect(cuCounts.so_full).toBe(1);
   });
 
-  it('Test Case 7: preserves 28/15 baseline columns without leaking Kho PO min/max and passes through extra PO/AR columns', () => {
+  it('Test Case 7: preserves 31/19 baseline columns without leaking internal columns (SO Canceled, Kho min/max) and passes through extra SO/AR columns', () => {
     const baselineRes = assembleReturnChain(createBaseQueryResults(), dateFrom, today);
-    expect(baselineRes.columns).toHaveLength(28);
-    expect(baselineRes.columns).not.toContain('Kho PO min');
-    expect(baselineRes.columns).not.toContain('Kho PO max');
+    expect(baselineRes.columns).toHaveLength(31);
+    expect(baselineRes.columns).not.toContain('SO Canceled');
+    expect(baselineRes.columns).not.toContain('Kho SO min');
+    expect(baselineRes.columns).not.toContain('Kho SO max');
     expect(baselineRes.extraArCols).toEqual([]);
 
     const withExtras = createBaseQueryResults({
-      po: {
-        columns: [
-          'PO Number',
-          'PO DocDate',
-          'PO CreateDate',
-          'Store',
-          'Brand',
-          'MC Docnum',
-          'Kho PO min',
-          'Kho PO max',
-          'Ghi chú UDF',
-        ],
-        rows: [
-          [7001, '2026-10-12', '2026-10-12', 'MC001', '5001', 'MC-7001', 'DC01', 'DC01', 'Hàng vỡ vận chuyển'],
-        ],
-      },
       so: {
         columns: [
-          'PO Number',
           'SO Number',
           'SO DocDate',
           'SO CreateDate',
+          'SO Canceled',
+          'Store',
+          'Brand',
+          'MC Docnum',
           'SO ShipDate',
           'Kho SO min',
           'Kho SO max',
+          'Ghi chú UDF',
         ],
         rows: [
-          [7001, 8001, '2026-10-12', '2026-10-12', '2026-10-14', 'MC001', 'MC001'],
+          [8001, '2026-10-12', '2026-10-12', 'N', 'MC001', '5001', 'MC-7001', '2026-10-14', 'MC001', 'MC001', 'Hàng vỡ vận chuyển'],
+        ],
+      },
+      po: {
+        columns: [
+          'SO Number',
+          'PO Number',
+          'PO DocDate',
+          'PO CreateDate',
+          'Kho PO min',
+          'Kho PO max',
+        ],
+        rows: [
+          [8001, 7001, '2026-10-12', '2026-10-12', 'DC01', 'DC01'],
         ],
       },
       ar: {
         columns: [
-          'PO Number',
+          'SO Number',
           'AR Number',
           'AR DocDate',
           'AR CreateDate',
@@ -591,14 +651,14 @@ describe('Return Monitor Pure Domain Logic', () => {
           'Kênh xuất HĐ',
         ],
         rows: [
-          [7001, 9001, '2026-10-13', '2026-10-13', '2026-10-14', null, 'E-Invoice VNPT'],
+          [8001, 9001, '2026-10-13', '2026-10-13', '2026-10-14', null, 'E-Invoice VNPT'],
         ],
       },
     });
 
     const assembled = assembleReturnChain(withExtras, dateFrom, today);
     expect(assembled.table.columns).toEqual([...RET_CHAIN_COLUMNS, 'Ghi chú UDF']);
-    expect(assembled.table.rows[0]?.[28]).toBe('Hàng vỡ vận chuyển');
+    expect(assembled.table.rows[0]?.[31]).toBe('Hàng vỡ vận chuyển');
     expect(assembled.rows[0]?.['Ghi chú UDF']).toBe('Hàng vỡ vận chuyển');
     expect(assembled.extraArCols).toEqual(['Kênh xuất HĐ']);
 
@@ -613,6 +673,6 @@ describe('Return Monitor Pure Domain Logic', () => {
       arNoInvRows,
     );
     expect(arNoInvTable.columns).toEqual([...RET_AR_NOINV_COLS, 'Kênh xuất HĐ']);
-    expect(arNoInvTable.rows[0]?.[15]).toBe('E-Invoice VNPT');
+    expect(arNoInvTable.rows[0]?.[19]).toBe('E-Invoice VNPT');
   });
 });

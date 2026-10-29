@@ -6,18 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { StatusBadge } from '@/components/status-badge';
 import type { SapStoreDto } from '@/lib/api/generated/model';
-import { formatSyncedAt } from '@/lib/admin/sap-store-domain';
+import { formatSyncedAt, isStoreQueryEnabled } from '@/lib/admin/sap-store-domain';
 
 export interface SapStoresColumnsCallbacks {
   updatingStoreCode: string | null;
-  onToggleSales: (code: string, currentVal: boolean) => void;
-  onToggleReturn: (code: string, currentVal: boolean) => void;
+  onToggleActive: (code: string, currentVal: boolean) => void;
 }
 
 export function createSapStoresColumns({
   updatingStoreCode,
-  onToggleSales,
-  onToggleReturn,
+  onToggleActive,
 }: SapStoresColumnsCallbacks): ColumnDef<SapStoreDto>[] {
   return [
     {
@@ -62,42 +60,22 @@ export function createSapStoresColumns({
         ),
     },
     {
-      id: 'isActiveSales',
-      header: 'Cho phép Query Bán hàng',
+      id: 'isActiveQuery',
+      header: 'Cho phép Query',
       cell: ({ row }) => {
         const store = row.original;
         const isRowUpdating = updatingStoreCode === store.code;
+        const isEnabled = isStoreQueryEnabled(store);
         return (
           <div className="flex items-center gap-2">
             <Switch
-              checked={store.isActiveSales}
+              checked={isEnabled}
               disabled={isRowUpdating}
-              aria-label={`Bật/tắt query Bán hàng cho kho ${store.code}`}
-              onCheckedChange={() => onToggleSales(store.code, store.isActiveSales)}
+              aria-label={`Bật/tắt cho phép query cho kho ${store.code}`}
+              onCheckedChange={() => onToggleActive(store.code, isEnabled)}
             />
             <span className="text-xs text-muted-foreground">
-              {store.isActiveSales ? 'Đang bật' : 'Tắt'}
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      id: 'isActiveReturn',
-      header: 'Cho phép Query Luồng trả',
-      cell: ({ row }) => {
-        const store = row.original;
-        const isRowUpdating = updatingStoreCode === store.code;
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={store.isActiveReturn}
-              disabled={isRowUpdating}
-              aria-label={`Bật/tắt query Luồng trả cho kho ${store.code}`}
-              onCheckedChange={() => onToggleReturn(store.code, store.isActiveReturn)}
-            />
-            <span className="text-xs text-muted-foreground">
-              {store.isActiveReturn ? 'Đang bật' : 'Tắt'}
+              {isEnabled ? 'Đang bật' : 'Tắt'}
             </span>
           </div>
         );

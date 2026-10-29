@@ -1,6 +1,6 @@
-// Xây dựng Phễu chuyển đổi 5 bước cho luồng Trả hàng (buildReturnFunnel),
-// tính toán 4 chỉ số tóm tắt KPI (buildReturnStatusSummary) và đếm số PO theo trạng thái (countReturnStatusByCohort).
-// Nguồn đối chiếu 1:1: desktop `sales_flow_checker.py` (:3431-3432, :3601-3654, :3883-3893).
+// Xây dựng Phễu chuyển đổi 6 bước cho luồng Trả hàng theo gốc SO (buildReturnFunnel),
+// tính toán 4 chỉ số tóm tắt KPI (buildReturnStatusSummary) và đếm số SO theo 11 trạng thái (countReturnStatusByCohort).
+// Nguồn đối chiếu 1:1: Mục 7.3 Đặc tả kỹ thuật v1.1 (28/10/2026).
 import { NHOM_CU, NHOM_MOI } from '../sales-monitor/sales-cohort';
 import {
   type SapRowRecord,
@@ -13,15 +13,19 @@ import {
   topDays,
 } from '../sales-monitor/sales-monitor-helpers';
 import {
+  RET_OUT_OF_FUNNEL_STATUSES,
   RET_WAIT_STATUSES,
+  RST_AP_NO_INV,
   RST_AR_NO_INV,
   RST_FULL,
+  RST_MANUAL_SO,
   RST_NO_AP,
   RST_NO_AR,
   RST_NO_AR_WAIT_SHIP,
   RST_NO_GRPO,
   RST_NO_GRPO_WAIT_SHIP,
-  RST_NO_SO,
+  RST_NO_PO,
+  RST_SO_CANCELED,
   type ReturnArNoInvRow,
   type ReturnArRow,
   type ReturnChainRow,
@@ -40,27 +44,33 @@ export const RET_FUNNEL_HEADERS = [
 ] as const;
 
 export const RET_STATUS_ITEMS = [
-  { key: 'po_no_so', label: RST_NO_SO, tag: 'attn' },
+  { key: 'so_canceled', label: RST_SO_CANCELED, tag: 'attn' },
+  { key: 'so_no_po', label: RST_NO_PO, tag: 'attn' },
   { key: 'so_no_ar', label: RST_NO_AR, tag: 'attn' },
   { key: 'so_no_ar_wait', label: RST_NO_AR_WAIT_SHIP, tag: 'normal' },
   { key: 'ar_no_inv', label: RST_AR_NO_INV, tag: 'attn' },
   { key: 'ar_no_grpo', label: RST_NO_GRPO, tag: 'attn' },
   { key: 'ar_no_grpo_wait', label: RST_NO_GRPO_WAIT_SHIP, tag: 'normal' },
   { key: 'grpo_no_ap', label: RST_NO_AP, tag: 'attn' },
-  { key: 'po_full', label: RST_FULL, tag: '' },
+  { key: 'ap_no_inv', label: RST_AP_NO_INV, tag: 'attn' },
+  { key: 'so_full', label: RST_FULL, tag: '' },
+  { key: 'so_manual', label: RST_MANUAL_SO, tag: 'normal' },
 ] as const;
 
 export type ReturnStatusKey = (typeof RET_STATUS_ITEMS)[number]['key'];
 
 export interface ReturnStatusCounts {
-  po_no_so: number;
+  so_canceled: number;
+  so_no_po: number;
   so_no_ar: number;
   so_no_ar_wait: number;
   ar_no_inv: number;
   ar_no_grpo: number;
   ar_no_grpo_wait: number;
   grpo_no_ap: number;
-  po_full: number;
+  ap_no_inv: number;
+  so_full: number;
+  so_manual: number;
 }
 
 export interface ReturnFunnelStep {
@@ -131,9 +141,10 @@ function makeReturnStep(
 }
 
 /**
- * Xây dựng Phễu chuyển đổi 5 bước cho luồng Trả hàng (`build_return_funnel`, `:3601-3654`).
- * - Bẫy 3: Bước 4 (`ar_no_grpo_wait`) xét `SO ShipDate > today` (tuyệt đối không xét `AR ShipDate`).
- * - Bẫy 4: Bước 2 hiển thị đơn vị `'SO'` nhưng `vin = po_so.length`, `ok = so_ar.length`, `okText = "{ok} SO → {n_ar} A/R"`.
+ * Xây dựng Phễu chuyển đổi 6 bước cho luồng Trả hàng theo gốc SO (`build_return_funnel`, Mục 7.3 Đặc tả v1.1):
+ * - Loại các SO trạng thái `0` (đã hủy) và `8` (thủ công) khỏi phễu trước khi tính toán.
+ * - Bước 4 xét `SO ShipDate > today` để xác định trạng thái chờ.
+ * - Bước 6 kiểm tra các SO có AP đã có `AP Invoice No`.
  */
 export function buildReturnFunnel(
   rows: readonly ReturnChainRow[],
@@ -141,29 +152,54 @@ export function buildReturnFunnel(
   grpoRows: readonly ReturnGrpoRow[],
   today: string = todayInVietnam(),
 ): ReturnFunnelStep[] {
+  const nCanceled = rows.filter(
+    (r) => r['Trang thai chuoi chung tu'] === RST_SO_CANCELED,
+  ).length;
+  const nManual = rows.filter(
+    (r) => r['Trang thai chuoi chung tu'] === RST_MANUAL_SO,
+  ).length;
+
+  const funnelRows = rows.filter(
+    (r) =>
+      !RET_OUT_OF_FUNNEL_STATUSES.has(
+        String(r['Trang thai chuoi chung tu'] ?? ''),
+      ),
+  );
+  const inFunnelSoNums = new Set<number>(
+    funnelRows.map((r) => Number(r['SO Number'])),
+  );
+  const fArRows = arRows.filter((r) =>
+    inFunnelSoNums.has(Number(r['SO Number'])),
+  );
+  const fGrpoRows = grpoRows.filter((r) =>
+    inFunnelSoNums.has(Number(r['SO Number'])),
+  );
+
   const nStatus = (...sts: string[]): number =>
-    rows.filter((r) =>
+    funnelRows.filter((r) =>
       sts.includes(String(r['Trang thai chuoi chung tu'] ?? '')),
     ).length;
 
-  const poSo = rows.filter((r) => hasValue(r['SO Number']));
-  const soAr = poSo.filter((r) => hasValue(r['AR Number']));
-  const arInv = arRows.filter((r) => hasValue(r['Invoice No']));
-  const poHasGrpo = new Set<number>(
-    rows
+  const soPo = funnelRows.filter((r) => hasValue(r['PO Number']));
+  const soAr = soPo.filter((r) => hasValue(r['AR Number']));
+  const arInv = fArRows.filter((r) => hasValue(r['Invoice No']));
+  const soHasGrpo = new Set<number>(
+    funnelRows
       .filter((r) => hasValue(r['GRPO Number']))
-      .map((r) => Number(r['PO Number'])),
+      .map((r) => Number(r['SO Number'])),
   );
-  const arGrpo = arInv.filter((r) => poHasGrpo.has(Number(r['PO Number'])));
-  const arNoGrpo = arInv.filter((r) => !poHasGrpo.has(Number(r['PO Number'])));
+  const arGrpo = arInv.filter((r) => soHasGrpo.has(Number(r['SO Number'])));
+  const arNoGrpo = arInv.filter((r) => !soHasGrpo.has(Number(r['SO Number'])));
 
-  // Bẫy 3: Bước 4 xét SO ShipDate > today (fallback về today nếu rỗng -> today > today = false -> tính vào Cần xử lý)
   const arNoGrpoWait = arNoGrpo.filter(
     (r) => (toSapDateString(r['SO ShipDate']) ?? today) > today,
   ).length;
 
-  const grpoAp = grpoRows.filter((g) => g.has_ap).length;
-  const noinv = arRows.filter((r) => !hasValue(r['Invoice No']));
+  const grpoAp = fGrpoRows.filter((g) => g.has_ap).length;
+  const soWithAp = funnelRows.filter((r) => hasValue(r['AP Number']));
+  const soWithApInv = soWithAp.filter((r) => hasValue(r['AP Invoice No']));
+
+  const noinv = fArRows.filter((r) => !hasValue(r['Invoice No']));
   const late = noinv.filter(
     (r) =>
       (toSapDateString(r['AR CreateDate']) ?? today) >
@@ -175,7 +211,6 @@ export function buildReturnFunnel(
       ? `AR ShipDate ${dayCounts(noinv, 'AR ShipDate')}; A/R tạo ngày ${dayCounts(noinv, 'AR CreateDate')}${late > 0 ? ` – ${late} A/R tạo sau ShipDate` : ''}`
       : '';
 
-  // Bẫy 4: Đếm tổng số chứng từ A/R từ các PO thuộc soAr
   const nAr = soAr.reduce(
     (acc, r) =>
       acc +
@@ -184,7 +219,20 @@ export function buildReturnFunnel(
         .filter(Boolean).length,
     0,
   );
-  const soNoAr = rows.filter(
+
+  const soNoPo = funnelRows.filter(
+    (r) => r['Trang thai chuoi chung tu'] === RST_NO_PO,
+  );
+  const step1Detail =
+    soNoPo.length > 0
+      ? `SO tạo ngày ${dayCounts(soNoPo, 'SO CreateDate')}`
+      : '';
+  const step1ExtraNote =
+    nCanceled + nManual > 0
+      ? `\n      (ngoài ra ${nCanceled} SO đã hủy nhưng PO KBMD vẫn mở (trạng thái 0), ${nManual} SO thủ công không có PO (trạng thái 8) – không tính ở đây)`
+      : '';
+
+  const soNoAr = funnelRows.filter(
     (r) => r['Trang thai chuoi chung tu'] === RST_NO_AR,
   );
   const soDetail =
@@ -192,28 +240,29 @@ export function buildReturnFunnel(
       ? `SO ShipDate ${dayCounts(soNoAr, 'SO ShipDate')}; SO tạo ngày ${dayCounts(soNoAr, 'SO CreateDate')}`
       : '';
 
-  const b3PoCount = new Set(arInv.map((r) => Number(r['PO Number']))).size;
-  const b4PoCount = new Set(arGrpo.map((r) => Number(r['PO Number']))).size;
+  const b3SoCount = new Set(arInv.map((r) => Number(r['SO Number']))).size;
+  const b4SoCount = new Set(arGrpo.map((r) => Number(r['SO Number']))).size;
 
   return [
     makeReturnStep(
       1,
-      '1. PO (KBMD) → SO (TTVH)',
-      'PO',
-      rows.length,
-      poSo.length,
-      `${poSo.length} SO`,
+      '1. SO (TTVH) → PO (KBMD)',
+      'SO',
+      funnelRows.length,
+      soPo.length,
+      `${soPo.length} SO → PO`,
       0,
-      nStatus(RST_NO_SO),
-      'PO đã sinh SO',
+      nStatus(RST_NO_PO),
+      `SO đã sinh PO (KBMD)${step1ExtraNote}`,
       '',
-      'PO chưa có SO',
+      'SO chưa sinh PO',
+      step1Detail,
     ),
     makeReturnStep(
       2,
       '2. SO → A/R (TTVH)',
       'SO',
-      poSo.length,
+      soPo.length,
       soAr.length,
       `${soAr.length} SO → ${nAr} A/R`,
       nStatus(RST_NO_AR_WAIT_SHIP),
@@ -227,11 +276,11 @@ export function buildReturnFunnel(
       3,
       '3. A/R → xuất hóa đơn',
       'A/R',
-      arRows.length,
+      fArRows.length,
       arInv.length,
-      `${arInv.length} A/R đã xuất HĐ (thuộc ${b3PoCount} PO)`,
+      `${arInv.length} A/R đã xuất HĐ (thuộc ${b3SoCount} SO)`,
       0,
-      arRows.length - arInv.length,
+      fArRows.length - arInv.length,
       'A/R đã xuất hóa đơn',
       '',
       'A/R chưa xuất hóa đơn',
@@ -243,7 +292,7 @@ export function buildReturnFunnel(
       'A/R',
       arInv.length,
       arGrpo.length,
-      `${arGrpo.length} A/R (thuộc ${b4PoCount} PO) đã có GRPO`,
+      `${arGrpo.length} A/R (thuộc ${b4SoCount} SO) đã có GRPO`,
       arNoGrpoWait,
       arNoGrpo.length - arNoGrpoWait,
       'A/R đã xuất HĐ có GRPO (KBMD)',
@@ -254,24 +303,37 @@ export function buildReturnFunnel(
       5,
       '5. GRPO → AP (KBMD)',
       'GRPO',
-      grpoRows.length,
+      fGrpoRows.length,
       grpoAp,
       `${grpoAp} GRPO đã có AP`,
       0,
-      grpoRows.length - grpoAp,
+      fGrpoRows.length - grpoAp,
       'GRPO đã có AP',
       '',
       'GRPO chưa có AP',
+    ),
+    makeReturnStep(
+      6,
+      '6. AP (KBMD) → có Invoice',
+      'SO',
+      soWithAp.length,
+      soWithApInv.length,
+      `${soWithApInv.length} SO có AP đã có Invoice`,
+      0,
+      soWithAp.length - soWithApInv.length,
+      'SO có AP đã có Invoice (Vendor Ref No)',
+      '',
+      'SO có AP nhưng AP chưa có Invoice',
     ),
   ];
 }
 
 /**
- * Tính 4 chỉ số KPI tổng quan cho màn hình Monitor Trả:
- * - `problems`: số PO nhóm mới chưa hoàn tất và không thuộc trạng thái chờ ShipDate.
+ * Tính 4 chỉ số KPI tổng quan cho màn hình Monitor Trả theo SO:
+ * - `problems`: số SO nhóm mới cần xử lý (khác `RST_FULL`, khác `RST_MANUAL_SO`, và không thuộc `RET_WAIT_STATUSES`).
  * - `arNoInvCount`: tổng số chứng từ A/R chưa xuất hóa đơn.
- * - `waiting`: số PO nhóm mới đang chờ đến SO ShipDate.
- * - `backlog`: số PO nhóm cũ chưa hoàn tất chuỗi chứng từ.
+ * - `waiting`: số SO nhóm mới đang chờ đến SO ShipDate.
+ * - `backlog`: số SO nhóm cũ chưa hoàn tất chuỗi chứng từ (khác `RST_FULL` và khác `RST_MANUAL_SO`).
  */
 export function buildReturnStatusSummary(
   rows: readonly ReturnChainRow[],
@@ -287,11 +349,11 @@ export function buildReturnStatusSummary(
     if (nhom === NHOM_MOI) {
       if (RET_WAIT_STATUSES.has(status)) {
         waiting++;
-      } else if (status !== RST_FULL) {
+      } else if (status !== RST_FULL && status !== RST_MANUAL_SO) {
         problems++;
       }
     } else if (nhom === NHOM_CU) {
-      if (status !== RST_FULL) {
+      if (status !== RST_FULL && status !== RST_MANUAL_SO) {
         backlog++;
       }
     }
@@ -306,7 +368,7 @@ export function buildReturnStatusSummary(
 }
 
 /**
- * Đếm số PO trả hàng theo 8 trạng thái trong `RET_STATUS_ORDER`,
+ * Đếm số SO trả hàng theo 11 trạng thái trong `RET_STATUS_ORDER`,
  * hỗ trợ lọc theo nhóm `cohort` (`'Mới'`, `'Cũ'`, hoặc `null` cho tất cả).
  */
 export function countReturnStatusByCohort(
@@ -314,14 +376,17 @@ export function countReturnStatusByCohort(
   cohort: 'Mới' | 'Cũ' | null = null,
 ): ReturnStatusCounts {
   const counts: ReturnStatusCounts = {
-    po_no_so: 0,
+    so_canceled: 0,
+    so_no_po: 0,
     so_no_ar: 0,
     so_no_ar_wait: 0,
     ar_no_inv: 0,
     ar_no_grpo: 0,
     ar_no_grpo_wait: 0,
     grpo_no_ap: 0,
-    po_full: 0,
+    ap_no_inv: 0,
+    so_full: 0,
+    so_manual: 0,
   };
 
   const keyByLabel = new Map<string, ReturnStatusKey>(

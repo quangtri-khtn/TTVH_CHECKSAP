@@ -7,6 +7,9 @@
 
 export * from './authLoginResponseDto';
 export * from './authResultDto';
+export * from './bulkUpdateSapStoresByBrandDto';
+export * from './bulkUpdateSapStoresByBrandResponseDto';
+export * from './bulkUpdateSapStoresByBrandResultDto';
 export * from './createSapConnectionDto';
 export * from './createUserDto';
 export * from './createUserDtoRole';

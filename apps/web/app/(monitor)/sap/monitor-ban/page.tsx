@@ -18,6 +18,8 @@ export default function SalesMonitorPage() {
   const {
     dateFrom,
     setDateFrom,
+    dateTo,
+    setDateTo,
     brand,
     setBrand,
     selectedCohort,
@@ -67,6 +69,8 @@ export default function SalesMonitorPage() {
         <SalesMonitorToolbar
           dateFrom={dateFrom}
           onDateFromChange={setDateFrom}
+          dateTo={dateTo}
+          onDateToChange={setDateTo}
           brand={brand}
           onBrandChange={setBrand}
           onReload={handleReload}
@@ -118,6 +122,7 @@ export default function SalesMonitorPage() {
           isLoading={isLoading}
           isGridExporting={isGridExporting}
           onExportGrid={handleExportGrid}
+          isDrilldown={drilldownSource !== null}
         />
       </div>
     </RequirePermission>

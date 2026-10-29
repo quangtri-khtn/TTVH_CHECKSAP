@@ -24,6 +24,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BulkUpdateSapStoresByBrandDto,
+  BulkUpdateSapStoresByBrandResponseDto,
   SapBrandListResponseDto,
   SapStoreEnvelopeDto,
   SapStoreListResponseDto,
@@ -285,7 +287,89 @@ export function useSapStoresGet<TData = Awaited<ReturnType<typeof sapStoresGet>>
 
 
 
-export type sapStoreUpdateResponse200 = {
+export type sapStoresBulkUpdateByBrandResponse200 = {
+  data: BulkUpdateSapStoresByBrandResponseDto
+  status: 200
+}
+
+export type sapStoresBulkUpdateByBrandResponseSuccess = (sapStoresBulkUpdateByBrandResponse200) & {
+  headers: Headers;
+};
+;
+
+export type sapStoresBulkUpdateByBrandResponse = (sapStoresBulkUpdateByBrandResponseSuccess)
+
+export const getSapStoresBulkUpdateByBrandUrl = () => {
+
+
+
+
+  return `/sap/stores/bulk-brand`
+}
+
+/**
+ * @summary Bật/tắt hàng loạt cửa hàng theo thương hiệu (mở theo trạng thái hoạt động trên SAP)
+ */
+export const sapStoresBulkUpdateByBrand = async (bulkUpdateSapStoresByBrandDto: BulkUpdateSapStoresByBrandDto, options?: Parameters<typeof customFetch>[1]): Promise<sapStoresBulkUpdateByBrandResponse> => {
+
+  return customFetch<sapStoresBulkUpdateByBrandResponse>(getSapStoresBulkUpdateByBrandUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bulkUpdateSapStoresByBrandDto)
+  }
+);}
+
+
+
+
+
+export const getSapStoresBulkUpdateByBrandMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>, TError,{data: BulkUpdateSapStoresByBrandDto}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>, TError,{data: BulkUpdateSapStoresByBrandDto}, TContext> => {
+
+const mutationKey = ['sapStoresBulkUpdateByBrand'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>, {data: BulkUpdateSapStoresByBrandDto}> = (props) => {
+          const {data} = props ?? {};
+
+          return  sapStoresBulkUpdateByBrand(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SapStoresBulkUpdateByBrandMutationResult = NonNullable<Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>>
+    export type SapStoresBulkUpdateByBrandMutationBody = BulkUpdateSapStoresByBrandDto
+    export type SapStoresBulkUpdateByBrandMutationError = unknown
+
+    /**
+ * @summary Bật/tắt hàng loạt cửa hàng theo thương hiệu (mở theo trạng thái hoạt động trên SAP)
+ */
+export const useSapStoresBulkUpdateByBrand = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>, TError,{data: BulkUpdateSapStoresByBrandDto}, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof sapStoresBulkUpdateByBrand>>,
+        TError,
+        {data: BulkUpdateSapStoresByBrandDto},
+        TContext
+      > => {
+      return useMutation(getSapStoresBulkUpdateByBrandMutationOptions(options), queryClient);
+    }
+    export type sapStoreUpdateResponse200 = {
   data: SapStoreEnvelopeDto
   status: 200
 }

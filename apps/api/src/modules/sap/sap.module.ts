@@ -4,6 +4,7 @@ import { SapConnectionsController } from './sap-connections.controller';
 import { SapSalesMonitorController } from './sap-sales-monitor.controller';
 import { SapReturnMonitorController } from './sap-return-monitor.controller';
 import { SapStoresController } from './sap-stores.controller';
+import { SapQueriesController } from './sap-queries.controller';
 import { SapConnectionService } from './services/sap-connection.service';
 import { SapCredentialCipherService } from './services/sap-credential-cipher.service';
 import { SapQueryGatewayService } from './services/sap-query-gateway.service';
@@ -13,6 +14,7 @@ import { SapReturnMonitorExcelService } from './services/sap-return-monitor-exce
 import { SapReturnMonitorService } from './services/sap-return-monitor.service';
 import { SapBrandService } from './services/sap-brand.service';
 import { SapStoreService } from './services/sap-store.service';
+import { SapQueryConfigService } from './services/sap-query-config.service';
 
 @Module({
   controllers: [
@@ -20,6 +22,7 @@ import { SapStoreService } from './services/sap-store.service';
     SapSalesMonitorController,
     SapReturnMonitorController,
     SapStoresController,
+    SapQueriesController,
   ],
   providers: [
     SapConnectionService,
@@ -31,6 +34,7 @@ import { SapStoreService } from './services/sap-store.service';
     SapReturnMonitorExcelService,
     SapBrandService,
     SapStoreService,
+    SapQueryConfigService,
   ],
   exports: [
     SapQueryGatewayService,
@@ -40,6 +44,7 @@ import { SapStoreService } from './services/sap-store.service';
     SapReturnMonitorExcelService,
     SapBrandService,
     SapStoreService,
+    SapQueryConfigService,
   ],
 })
 export class SapModule {}

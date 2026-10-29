@@ -75,7 +75,7 @@ function SapQueriesStudioContent() {
       setLastReviewedSql(null);
       setChangeNote('');
     }
-  }, [detail?.key, detail?.currentVersionNo, detail?.activeSql]);
+  }, [detail]);
 
   const handleFlowChange = useCallback(
     (nextFlow: SapQueryFlowTab) => {
@@ -198,73 +198,69 @@ function SapQueriesStudioContent() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start">
-        <SapQueriesSidebarList
-          activeFlow={activeFlow}
-          onFlowChange={handleFlowChange}
-          search={search}
-          onSearchChange={setSearch}
-          flowCounts={flowCounts}
-          groups={stageGroups}
-          selectedKey={selectedKey}
-          onSelectQuery={setSelectedKey}
-          isLoading={listQuery.isLoading}
-        />
+      <SapQueriesSidebarList
+        activeFlow={activeFlow}
+        onFlowChange={handleFlowChange}
+        search={search}
+        onSearchChange={setSearch}
+        flowCounts={flowCounts}
+        groups={stageGroups}
+        selectedKey={selectedKey}
+        onSelectQuery={setSelectedKey}
+        isLoading={listQuery.isLoading}
+      />
 
-        <div className="min-w-0 flex-1 space-y-3">
-          {detailQuery.isLoading || !detail ? (
-            <div className="space-y-3">
-              <Skeleton className="h-32 w-full rounded-lg" />
-              <Skeleton className="h-72 w-full rounded-lg" />
-            </div>
-          ) : (
-            <>
-              <SapQueryPassportHeader
-                detail={detail}
-                currentSql={currentSql}
-                onCopyToken={copySqlToClipboard}
-              />
-
-              <SapQuerySqlEditor
-                detail={detail}
-                currentSql={currentSql}
-                onChangeSql={setCurrentSql}
-                sampleDate={sampleDate}
-                onChangeSampleDate={setSampleDate}
-                sampleBrand={sampleBrand}
-                onChangeSampleBrand={setSampleBrand}
-                onCopyText={copySqlToClipboard}
-                onReview={handleReview}
-                onResetDefault={handleResetDefault}
-                onOpenHistory={() => setHistoryOpen(true)}
-                isReviewing={isReviewing}
-                isResettingDefault={isResettingDefault}
-              />
-
-              <SapQueryReviewPanel
-                reviewResult={reviewResult}
-                currentSql={currentSql}
-                activeSql={detail.activeSql}
-                lastReviewedSql={lastReviewedSql}
-                changeNote={changeNote}
-                onChangeNote={setChangeNote}
-                onPublish={handlePublish}
-                isPublishing={isPublishing}
-                isReviewing={isReviewing}
-              />
-
-              <SapQueryHistorySheet
-                open={historyOpen}
-                onOpenChange={setHistoryOpen}
-                detail={detail}
-                onLoadSqlToEditor={setCurrentSql}
-                onRollbackVersion={handleRollbackVersion}
-                isRollingBack={isRollingBack}
-              />
-            </>
-          )}
+      {detailQuery.isLoading || !detail ? (
+        <div className="space-y-3">
+          <Skeleton className="h-32 w-full rounded-lg" />
+          <Skeleton className="h-72 w-full rounded-lg" />
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          <SapQueryPassportHeader
+            detail={detail}
+            currentSql={currentSql}
+            onCopyToken={copySqlToClipboard}
+          />
+
+          <SapQuerySqlEditor
+            detail={detail}
+            currentSql={currentSql}
+            onChangeSql={setCurrentSql}
+            sampleDate={sampleDate}
+            onChangeSampleDate={setSampleDate}
+            sampleBrand={sampleBrand}
+            onChangeSampleBrand={setSampleBrand}
+            onCopyText={copySqlToClipboard}
+            onReview={handleReview}
+            onResetDefault={handleResetDefault}
+            onOpenHistory={() => setHistoryOpen(true)}
+            isReviewing={isReviewing}
+            isResettingDefault={isResettingDefault}
+          />
+
+          <SapQueryReviewPanel
+            reviewResult={reviewResult}
+            currentSql={currentSql}
+            activeSql={detail.activeSql}
+            lastReviewedSql={lastReviewedSql}
+            changeNote={changeNote}
+            onChangeNote={setChangeNote}
+            onPublish={handlePublish}
+            isPublishing={isPublishing}
+            isReviewing={isReviewing}
+          />
+
+          <SapQueryHistorySheet
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            detail={detail}
+            onLoadSqlToEditor={setCurrentSql}
+            onRollbackVersion={handleRollbackVersion}
+            isRollingBack={isRollingBack}
+          />
+        </div>
+      )}
     </div>
   );
 }

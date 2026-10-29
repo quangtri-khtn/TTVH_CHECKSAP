@@ -35,22 +35,22 @@ export interface SapQuerySqlEditorProps {
   isResettingDefault: boolean;
 }
 
-type EditorViewMode = 'split' | 'edit' | 'highlight';
+type EditorViewMode = 'edit' | 'highlight' | 'split';
 
 const TOKEN_STYLE: Record<SqlTokenKind, string> = {
   keyword: 'font-bold text-blue-700 dark:text-blue-300',
-  schema: 'font-semibold text-teal-700 dark:text-teal-300',
-  string: 'text-amber-800 dark:text-amber-300',
-  identifier: 'text-sky-800 dark:text-sky-200',
   placeholder:
-    'mx-0.5 inline-block rounded border border-violet-500/60 bg-violet-500/15 px-1 font-bold text-violet-900 dark:text-violet-200',
+    'mx-0.5 inline-block rounded border border-violet-500/50 bg-violet-500/15 px-1 font-bold text-violet-950 dark:text-violet-200',
+  schema: 'font-semibold text-teal-800 dark:text-teal-300',
+  string: 'text-amber-800 dark:text-amber-300',
+  identifier: 'text-sky-900 dark:text-sky-200',
   text: 'text-foreground',
 };
 
 const VIEW_MODES: { id: EditorViewMode; label: string; icon: typeof Columns2 }[] = [
-  { id: 'split', label: 'Song song', icon: Columns2 },
-  { id: 'edit', label: 'Soạn thảo', icon: Code2 },
-  { id: 'highlight', label: 'Tô màu SQL', icon: Eye },
+  { id: 'edit', label: 'Soạn thảo SQL', icon: Code2 },
+  { id: 'highlight', label: 'Tô màu Cú pháp & Biến', icon: Eye },
+  { id: 'split', label: 'Song song 2 khung', icon: Columns2 },
 ];
 
 export function SapQuerySqlEditor({
@@ -69,7 +69,7 @@ export function SapQuerySqlEditor({
   isResettingDefault,
 }: SapQuerySqlEditorProps) {
   const [showDiff, setShowDiff] = useState(false);
-  const [viewMode, setViewMode] = useState<EditorViewMode>('split');
+  const [viewMode, setViewMode] = useState<EditorViewMode>('edit');
   const gutterRef = useRef<HTMLDivElement | null>(null);
 
   const estimatedLength = useMemo(
@@ -101,7 +101,7 @@ export function SapQuerySqlEditor({
     <div className="space-y-3 rounded-lg border bg-card p-3.5 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-foreground">SQL IDE Workbench (SAP HANA)</span>
+          <span className="text-sm font-bold text-foreground">SQL IDE Workbench (SAP HANA)</span>
           <Badge variant="outline" className="font-mono text-xs font-semibold">
             {highlightedLines.length} dòng
           </Badge>
@@ -163,7 +163,7 @@ export function SapQuerySqlEditor({
                 type="button"
                 onClick={() => setViewMode(id)}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors',
+                  'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
                   viewMode === id ? 'bg-background text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -201,16 +201,16 @@ export function SapQuerySqlEditor({
         </Button>
       </div>
 
-      <div className={cn('grid gap-3', viewMode === 'split' ? 'xl:grid-cols-2' : 'grid-cols-1')}>
+      <div className={cn('grid gap-3', viewMode === 'split' ? 'lg:grid-cols-2' : 'grid-cols-1')}>
         {viewMode !== 'highlight' && (
           <div className="flex overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/40">
             <div
               ref={gutterRef}
               aria-hidden="true"
-              className="max-h-[300px] min-h-[240px] w-11 shrink-0 overflow-hidden border-r bg-muted/50 py-2 text-right font-mono text-xs leading-relaxed text-muted-foreground select-none"
+              className="max-h-[420px] min-h-[300px] w-12 shrink-0 overflow-hidden border-r bg-muted/50 py-2.5 text-right font-mono text-sm leading-relaxed text-muted-foreground select-none"
             >
               {highlightedLines.map((line) => (
-                <div key={line.lineNo} className="px-2">{line.lineLabel}</div>
+                <div key={line.lineNo} className="px-2.5">{line.lineLabel}</div>
               ))}
             </div>
             <Textarea
@@ -219,19 +219,22 @@ export function SapQuerySqlEditor({
               onScroll={(e) => {
                 if (gutterRef.current) gutterRef.current.scrollTop = e.currentTarget.scrollTop;
               }}
-              rows={12}
+              rows={14}
               spellCheck={false}
               placeholder="Nhập câu truy vấn SELECT / WITH cho SAP HANA..."
-              className="max-h-[300px] min-h-[240px] flex-1 resize-y rounded-none border-0 font-mono text-xs leading-relaxed shadow-none focus-visible:ring-0"
+              className="max-h-[420px] min-h-[300px] flex-1 resize-y rounded-none border-0 p-2.5 font-mono text-sm leading-relaxed shadow-none focus-visible:ring-0"
             />
           </div>
         )}
 
         {viewMode !== 'edit' && (
-          <div className="max-h-[300px] min-h-[240px] overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs leading-relaxed">
+          <div
+            tabIndex={0}
+            className="max-h-[420px] min-h-[300px] overflow-auto rounded-md border bg-muted/20 p-2.5 font-mono text-sm leading-relaxed"
+          >
             {highlightedLines.map((line) => (
-              <div key={line.lineNo} className="flex items-baseline gap-2.5 px-1 hover:bg-muted/50">
-                <span className="w-7 shrink-0 text-right text-xs font-semibold text-muted-foreground select-none">
+              <div key={line.lineNo} className="flex items-baseline gap-3 px-1.5 py-0.5 hover:bg-muted/50">
+                <span className="w-8 shrink-0 text-right text-xs font-semibold text-muted-foreground select-none">
                   {line.lineLabel}
                 </span>
                 <div className="min-w-0 flex-1 whitespace-pre-wrap break-all">
@@ -256,7 +259,7 @@ export function SapQuerySqlEditor({
           {!lineDiff.hasChanges ? (
             <p className="text-xs text-muted-foreground">Nội dung hiện tại khớp 100% với bản gốc chuẩn v1.</p>
           ) : (
-            <div className="max-h-56 overflow-auto rounded border bg-background p-2 font-mono text-xs">
+            <div tabIndex={0} className="max-h-64 overflow-auto rounded border bg-background p-2 font-mono text-xs">
               {lineDiff.lines.map((line, idx) => (
                 <div
                   key={idx}

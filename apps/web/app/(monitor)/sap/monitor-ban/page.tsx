@@ -29,9 +29,11 @@ export default function SalesMonitorPage() {
     activeGrid,
     isLoading,
     isFetching,
+    isReloading,
     isDetailExporting,
     isGridExporting,
     error,
+    handleReload,
     handleSelectFunnelStep,
     handleSelectDocStatus,
     handleClearDrilldown,
@@ -67,10 +69,12 @@ export default function SalesMonitorPage() {
           onDateFromChange={setDateFrom}
           brand={brand}
           onBrandChange={setBrand}
+          onReload={handleReload}
           onExportDetail={handleExportDetail}
           showDocStatus={showDocStatus}
           onToggleDocStatus={handleToggleDocStatus}
           isLoading={isLoading}
+          isReloading={isReloading}
           isDetailExporting={isDetailExporting}
         />
 
@@ -82,7 +86,7 @@ export default function SalesMonitorPage() {
           drilldownTitle={activeGrid.drilldownTitle}
           onClearDrilldown={handleClearDrilldown}
           isLoading={isLoading}
-          isFetching={isFetching}
+          isFetching={isFetching || isReloading}
           error={error}
         />
 

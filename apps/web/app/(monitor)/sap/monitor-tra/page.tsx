@@ -29,9 +29,11 @@ export default function ReturnMonitorPage() {
     activeGrid,
     isLoading,
     isFetching,
+    isReloading,
     isDetailExporting,
     isGridExporting,
     error,
+    handleReload,
     handleCohortChange,
     handleSelectFunnelStep,
     handleSelectStatus,
@@ -62,10 +64,12 @@ export default function ReturnMonitorPage() {
           onDateFromChange={setDateFrom}
           brand={brand}
           onBrandChange={setBrand}
+          onReload={handleReload}
           onExportDetail={handleExportDetail}
           showStatusBox={showStatusBox}
           onToggleStatusBox={handleToggleStatusBox}
           isLoading={isLoading}
+          isReloading={isReloading}
           isDetailExporting={isDetailExporting}
         />
 
@@ -77,7 +81,7 @@ export default function ReturnMonitorPage() {
           drilldownTitle={activeGrid.drilldownTitle}
           onClearFilter={handleClearFilter}
           isLoading={isLoading}
-          isFetching={isFetching}
+          isFetching={isFetching || isReloading}
           error={error}
         />
 

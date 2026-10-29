@@ -1,10 +1,15 @@
 'use client';
 
 // Action hook điều phối state, tự động gọi/cache qua TanStack Query khi đổi Từ ngày hoặc Brand,
-// xử lý nhấp bước 3 Phễu (A/R chưa xuất HĐ), lọc Trạng thái chuỗi chứng từ và xuất Excel cho trang /sap/monitor-tra.
+// tải lại cưỡng bức (refresh=true), xử lý nhấp bước 3 Phễu (A/R chưa xuất HĐ), lọc Trạng thái chuỗi chứng từ và xuất Excel cho trang /sap/monitor-tra.
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useSapReturnMonitorGetData } from '@/lib/api/generated/sap-monitor/sap-monitor';
+import {
+  getSapReturnMonitorGetDataQueryKey,
+  sapReturnMonitorGetData,
+  useSapReturnMonitorGetData,
+} from '@/lib/api/generated/sap-monitor/sap-monitor';
 import {
   downloadReturnMonitorDetailExcel,
   downloadReturnMonitorGridExcel,
@@ -25,6 +30,7 @@ export interface UseReturnMonitorActionsOptions {
 export function useReturnMonitorActions({
   enabled = true,
 }: UseReturnMonitorActionsOptions = {}) {
+  const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState<string>(() => getYesterdaySapDate());
   const [brand, setBrand] = useState<string>(DEFAULT_RETURN_BRAND);
 
@@ -33,6 +39,7 @@ export function useReturnMonitorActions({
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [showStatusBox, setShowStatusBox] = useState<boolean>(false);
 
+  const [isReloading, setIsReloading] = useState<boolean>(false);
   const [isDetailExporting, setIsDetailExporting] = useState<boolean>(false);
   const [isGridExporting, setIsGridExporting] = useState<boolean>(false);
 
@@ -61,6 +68,31 @@ export function useReturnMonitorActions({
       }),
     [monitorData?.lists, viewMode, statusFilter, selectedCohort],
   );
+
+  const handleReload = useCallback(async () => {
+    setIsReloading(true);
+    const toastId = toast.loading(
+      `Đang tải lại dữ liệu luồng trả mới nhất từ SAP HANA (${dateFrom} · Brand ${brand})...`,
+    );
+    try {
+      const freshResponse = await sapReturnMonitorGetData({
+        dateFrom,
+        brand,
+        refresh: true,
+      });
+      queryClient.setQueryData(
+        getSapReturnMonitorGetDataQueryKey(queryParams),
+        freshResponse,
+      );
+      toast.success('Đã tải lại dữ liệu luồng trả mới nhất từ SAP HANA.', {
+        id: toastId,
+      });
+    } catch (err) {
+      toast.error(getReturnMonitorErrorMessage(err), { id: toastId });
+    } finally {
+      setIsReloading(false);
+    }
+  }, [brand, dateFrom, queryClient, queryParams]);
 
   const handleCohortChange = useCallback((cohort: CohortFilter) => {
     setSelectedCohort(cohort);
@@ -154,9 +186,11 @@ export function useReturnMonitorActions({
     activeGrid,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    isReloading,
     isDetailExporting,
     isGridExporting,
     error: query.error,
+    handleReload,
     handleCohortChange,
     handleSelectFunnelStep,
     handleSelectStatus,

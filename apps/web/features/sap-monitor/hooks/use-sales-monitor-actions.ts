@@ -1,9 +1,14 @@
 'use client';
 
-// Action hook điều phối state, tự động gọi/cache qua TanStack Query khi đổi Từ ngày hoặc Brand, và xử lý xuất Excel cho trang /sap/monitor-ban.
+// Action hook điều phối state, tự động gọi/cache qua TanStack Query khi đổi Từ ngày hoặc Brand, tải lại cưỡng bức (refresh=true) và xử lý xuất Excel cho trang /sap/monitor-ban.
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useSapSalesMonitorGetData } from '@/lib/api/generated/sap-monitor/sap-monitor';
+import {
+  getSapSalesMonitorGetDataQueryKey,
+  sapSalesMonitorGetData,
+  useSapSalesMonitorGetData,
+} from '@/lib/api/generated/sap-monitor/sap-monitor';
 import {
   downloadSalesMonitorDetailExcel,
   downloadSalesMonitorGridExcel,
@@ -24,6 +29,7 @@ export interface UseSalesMonitorActionsOptions {
 }
 
 export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorActionsOptions = {}) {
+  const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState<string>(() => getYesterdaySapDate());
   const [brand, setBrand] = useState<string>(DEFAULT_SALES_BRAND);
 
@@ -32,6 +38,7 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
   const [drilldownSource, setDrilldownSource] = useState<DrilldownSource>(null);
   const [showDocStatus, setShowDocStatus] = useState<boolean>(false);
 
+  const [isReloading, setIsReloading] = useState<boolean>(false);
   const [isDetailExporting, setIsDetailExporting] = useState<boolean>(false);
   const [isGridExporting, setIsGridExporting] = useState<boolean>(false);
 
@@ -51,6 +58,29 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     () => resolveActiveGridData(monitorData, selectedViewKey, selectedCohort, drilldownSource),
     [monitorData, selectedViewKey, selectedCohort, drilldownSource],
   );
+
+  const handleReload = useCallback(async () => {
+    setIsReloading(true);
+    const toastId = toast.loading(
+      `Đang tải lại dữ liệu mới nhất từ SAP HANA (${dateFrom} · Brand ${brand})...`,
+    );
+    try {
+      const freshResponse = await sapSalesMonitorGetData({
+        dateFrom,
+        brand,
+        refresh: true,
+      });
+      queryClient.setQueryData(
+        getSapSalesMonitorGetDataQueryKey(queryParams),
+        freshResponse,
+      );
+      toast.success('Đã tải lại dữ liệu mới nhất từ SAP HANA.', { id: toastId });
+    } catch (err) {
+      toast.error(getSalesMonitorErrorMessage(err), { id: toastId });
+    } finally {
+      setIsReloading(false);
+    }
+  }, [brand, dateFrom, queryClient, queryParams]);
 
   const handleSelectFunnelStep = useCallback((stepIndex: number) => {
     setDrilldownSource({ type: 'funnel', stepIndex });
@@ -140,9 +170,11 @@ export function useSalesMonitorActions({ enabled = true }: UseSalesMonitorAction
     activeGrid,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    isReloading,
     isDetailExporting,
     isGridExporting,
     error: query.error,
+    handleReload,
     handleSelectFunnelStep,
     handleSelectDocStatus,
     handleClearDrilldown,

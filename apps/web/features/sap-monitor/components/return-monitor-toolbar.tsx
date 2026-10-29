@@ -1,10 +1,10 @@
 'use client';
 
 // Thanh công cụ điều khiển tham số truy vấn SAP Luồng Trả (Từ ngày Date Picker, Brand Select 5001..5007),
-// xuất Excel chi tiết 3 sheets và bật/tắt bảng trạng thái chuỗi chứng từ.
+// tải lại cưỡng bức (refresh=true), xuất Excel chi tiết 3 sheets và bật/tắt bảng trạng thái chuỗi chứng từ.
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronUp, FileSpreadsheet, Settings } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileSpreadsheet, RefreshCw, Settings } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,10 +30,12 @@ export interface ReturnMonitorToolbarProps {
   onDateFromChange: (value: string) => void;
   brand: string;
   onBrandChange: (value: string) => void;
+  onReload: () => void;
   onExportDetail: () => void;
   showStatusBox: boolean;
   onToggleStatusBox: () => void;
   isLoading: boolean;
+  isReloading?: boolean;
   isDetailExporting: boolean;
 }
 
@@ -42,10 +44,12 @@ export function ReturnMonitorToolbar({
   onDateFromChange,
   brand,
   onBrandChange,
+  onReload,
   onExportDetail,
   showStatusBox,
   onToggleStatusBox,
   isLoading,
+  isReloading = false,
   isDetailExporting,
 }: ReturnMonitorToolbarProps) {
   const brandsQuery = useSapBrandsGet();
@@ -62,6 +66,8 @@ export function ReturnMonitorToolbar({
 
   const selectedBrand =
     brandOptions.find((b) => b.value === brand) ?? brandOptions[0];
+  const isBusy = isLoading || isReloading;
+
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex items-center gap-2">
@@ -100,10 +106,23 @@ export function ReturnMonitorToolbar({
 
       <Button
         type="button"
+        variant="default"
+        size="sm"
+        onClick={onReload}
+        disabled={isBusy || isDetailExporting}
+        title="Bỏ qua bộ đệm 60 giây và tải lại dữ liệu mới nhất từ SAP HANA theo bộ lọc hiện tại"
+        className="gap-1.5 font-semibold"
+      >
+        <RefreshCw className={cn('size-3.5', isBusy && 'animate-spin')} />
+        {isReloading ? 'Đang tải lại...' : 'Tải lại dữ liệu'}
+      </Button>
+
+      <Button
+        type="button"
         variant="outline"
         size="sm"
         onClick={onExportDetail}
-        disabled={isLoading || isDetailExporting}
+        disabled={isBusy || isDetailExporting}
         className="gap-1.5"
       >
         <FileSpreadsheet className="size-3.5 text-emerald-700 dark:text-emerald-400" />
@@ -117,7 +136,7 @@ export function ReturnMonitorToolbar({
             className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
           >
             <Settings className="size-3.5" />
-            ⚙ Quản lý SQL
+            Quản lý SQL
           </Link>
         )}
         <Button
@@ -128,7 +147,7 @@ export function ReturnMonitorToolbar({
           className="gap-1.5"
         >
           {showStatusBox ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-          {showStatusBox ? '▼ Ẩn bảng trạng thái chuỗi' : '▶ Hiện bảng trạng thái chuỗi'}
+          {showStatusBox ? 'Ẩn bảng trạng thái chuỗi' : 'Hiện bảng trạng thái chuỗi'}
         </Button>
       </div>
     </div>

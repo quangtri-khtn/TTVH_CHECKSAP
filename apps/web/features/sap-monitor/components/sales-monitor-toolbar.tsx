@@ -1,9 +1,9 @@
 'use client';
 
-// Thanh công cụ điều khiển tham số truy vấn SAP (Từ ngày Date Picker, Brand Select 5001..5007 — tự động gọi/cache khi thay đổi), xuất Excel 11 sheet và bật/tắt bảng chứng từ treo.
+// Thanh công cụ điều khiển tham số truy vấn SAP (Từ ngày Date Picker, Brand Select 5001..5007 — tự động gọi/cache khi thay đổi), tải lại cưỡng bức (refresh=true), xuất Excel 11 sheet và bật/tắt bảng chứng từ treo.
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronUp, FileSpreadsheet, Settings } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileSpreadsheet, RefreshCw, Settings } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,10 +29,12 @@ export interface SalesMonitorToolbarProps {
   onDateFromChange: (value: string) => void;
   brand: string;
   onBrandChange: (value: string) => void;
+  onReload: () => void;
   onExportDetail: () => void;
   showDocStatus: boolean;
   onToggleDocStatus: () => void;
   isLoading: boolean;
+  isReloading?: boolean;
   isDetailExporting: boolean;
 }
 
@@ -41,10 +43,12 @@ export function SalesMonitorToolbar({
   onDateFromChange,
   brand,
   onBrandChange,
+  onReload,
   onExportDetail,
   showDocStatus,
   onToggleDocStatus,
   isLoading,
+  isReloading = false,
   isDetailExporting,
 }: SalesMonitorToolbarProps) {
   const brandsQuery = useSapBrandsGet();
@@ -61,6 +65,8 @@ export function SalesMonitorToolbar({
 
   const selectedBrand =
     brandOptions.find((b) => b.value === brand) ?? brandOptions[0];
+  const isBusy = isLoading || isReloading;
+
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 shadow-xs">
       <div className="flex items-center gap-2">
@@ -99,10 +105,23 @@ export function SalesMonitorToolbar({
 
       <Button
         type="button"
+        variant="default"
+        size="sm"
+        onClick={onReload}
+        disabled={isBusy || isDetailExporting}
+        title="Bỏ qua bộ đệm 60 giây và tải lại dữ liệu mới nhất từ SAP HANA theo bộ lọc hiện tại"
+        className="gap-1.5 font-semibold"
+      >
+        <RefreshCw className={cn('size-3.5', isBusy && 'animate-spin')} />
+        {isReloading ? 'Đang tải lại...' : 'Tải lại dữ liệu'}
+      </Button>
+
+      <Button
+        type="button"
         variant="outline"
         size="sm"
         onClick={onExportDetail}
-        disabled={isLoading || isDetailExporting}
+        disabled={isBusy || isDetailExporting}
         className="gap-1.5"
       >
         <FileSpreadsheet className="size-3.5 text-emerald-700 dark:text-emerald-400" />
@@ -116,7 +135,7 @@ export function SalesMonitorToolbar({
             className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
           >
             <Settings className="size-3.5" />
-            ⚙ Quản lý SQL
+            Quản lý SQL
           </Link>
         )}
         <Button

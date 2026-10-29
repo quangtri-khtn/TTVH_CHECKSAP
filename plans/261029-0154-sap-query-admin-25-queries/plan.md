@@ -1,7 +1,7 @@
 ---
 title: "Phân hệ Quản trị & Chỉnh sửa 25 Câu Truy vấn SAP trong DB (2 Tab · Full SQL · Review & Validate)"
 description: "Quản trị 25 câu truy vấn SAP HANA chia theo 2 Tab (13 câu Luồng Bán + 12 câu Luồng Trả) lưu trong PostgreSQL, cho phép Copy/Paste Full SQL, chạy thử Review & Validate đối chiếu Hợp đồng Cột với câu gốc, lưu lịch sử phiên bản, hoàn tác 1 click và passthrough cột mới ra UI/Excel."
-status: in-progress
+status: completed
 priority: P1
 effort: 8.0h
 branch: main
@@ -148,7 +148,7 @@ flowchart LR
 | 1 | [Phase 1: Schema, Permission & 25-Query Seed Catalog](./phase-01-start.md) | Model Prisma `SapQueryDef`/`SapQueryVersion`/`SapQueryAudit`, quyền `sap-query:manage`, danh mục 25 câu Full SQL (`SAP_QUERY_CATALOG` có `baselineColumns` & `requiredColumns`) kèm unit test đối chiếu khớp 100% ký tự với query hiện tại | 2.0h | Không có | Completed |
 | 2 | [Phase 2: Backend Engine, Review Validator & CRUD API](./phase-02-backend-engine-and-api.md) | Engine bung biến runtime từ frozen snapshot, Static Lexer Validator, Dry-run đối chiếu Hợp đồng Cột & `dedupKeys`, `SapQueryConfigService` (append-only version) & `SapQueriesController` | 2.5h | Phase 1 | Completed |
 | 3 | [Phase 3: Monitor Integration, Extra-Col Passthrough & Codegen](./phase-03-monitor-integration-and-passthrough.md) | Nối `SapQueryConfigService` (frozen snapshot) vào `SapSalesMonitorService` & `SapReturnMonitorService`, nâng cấp passthrough cột mới cho `assemblePoChain` & `assembleReturnChain`/`buildReturnArNoInv`, chạy `pnpm codegen` | 1.5h | Phase 2 | Completed |
-| 4 | [Phase 4: Frontend 2-Tab Admin Query Studio](./phase-04-frontend-admin-query-studio.md) | Trang `/admin/sap-queries` (2 Tab Luồng Bán 13 câu / Luồng Trả 12 câu, Split-pane Editor, nút Review & Validate cột gốc + Preview 50 dòng, Xuất bản, Lịch sử/Diff/Hoàn tác) + Shortcut trên 2 trang Monitor | 2.0h | Phase 3 | Pending |
+| 4 | [Phase 4: Frontend 2-Tab Admin Query Studio](./phase-04-frontend-admin-query-studio.md) | Trang `/admin/sap-queries` (2 Tab Luồng Bán 13 câu / Luồng Trả 12 câu, Split-pane Editor, nút Review & Validate cột gốc + Preview 50 dòng, Xuất bản, Lịch sử/Diff/Hoàn tác) + Shortcut trên 2 trang Monitor | 2.0h | Phase 3 | Completed |
 
 ---
 

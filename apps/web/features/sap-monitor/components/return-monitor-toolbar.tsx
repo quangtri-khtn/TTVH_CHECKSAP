@@ -3,8 +3,9 @@
 // Thanh công cụ điều khiển tham số truy vấn SAP Luồng Trả (Từ ngày Date Picker, Brand Select 5001..5007),
 // xuất Excel chi tiết 3 sheets và bật/tắt bảng trạng thái chuỗi chứng từ.
 import { useMemo } from 'react';
-import { ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { ChevronDown, ChevronUp, FileSpreadsheet, Settings } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -20,6 +21,9 @@ import {
   sapDateToDateInput,
 } from '@/lib/sap-monitor/return-monitor-domain';
 import { useSapBrandsGet } from '@/lib/api/generated/sap-stores/sap-stores';
+import { PERMISSIONS } from '@/lib/auth/permission-keys';
+import { usePermissions } from '@/lib/auth/use-permissions';
+import { cn } from '@/lib/utils';
 
 export interface ReturnMonitorToolbarProps {
   dateFrom: string;
@@ -45,6 +49,8 @@ export function ReturnMonitorToolbar({
   isDetailExporting,
 }: ReturnMonitorToolbarProps) {
   const brandsQuery = useSapBrandsGet();
+  const { can } = usePermissions();
+  const canManageSql = can(PERMISSIONS.SAP_QUERY_MANAGE);
   const brandOptions = useMemo(() => {
     const list = brandsQuery.data?.data.data;
     if (!list?.length) return RETURN_BRAND_OPTIONS;
@@ -104,16 +110,27 @@ export function ReturnMonitorToolbar({
         {isDetailExporting ? 'Đang xuất Excel...' : 'Xuất file chi tiết (Excel)'}
       </Button>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onToggleStatusBox}
-        className="ml-auto gap-1.5"
-      >
-        {showStatusBox ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-        {showStatusBox ? '▼ Ẩn bảng trạng thái chuỗi' : '▶ Hiện bảng trạng thái chuỗi'}
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        {canManageSql && (
+          <Link
+            href="/admin/sap-queries?flow=tra"
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+          >
+            <Settings className="size-3.5" />
+            ⚙ Quản lý SQL
+          </Link>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onToggleStatusBox}
+          className="gap-1.5"
+        >
+          {showStatusBox ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          {showStatusBox ? '▼ Ẩn bảng trạng thái chuỗi' : '▶ Hiện bảng trạng thái chuỗi'}
+        </Button>
+      </div>
     </div>
   );
 }

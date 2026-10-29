@@ -2,8 +2,9 @@
 
 // Thanh công cụ điều khiển tham số truy vấn SAP (Từ ngày Date Picker, Brand Select 5001..5007 — tự động gọi/cache khi thay đổi), xuất Excel 11 sheet và bật/tắt bảng chứng từ treo.
 import { useMemo } from 'react';
-import { ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { ChevronDown, ChevronUp, FileSpreadsheet, Settings } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -19,6 +20,9 @@ import {
   sapDateToDateInput,
 } from '@/lib/sap-monitor/sales-monitor-domain';
 import { useSapBrandsGet } from '@/lib/api/generated/sap-stores/sap-stores';
+import { PERMISSIONS } from '@/lib/auth/permission-keys';
+import { usePermissions } from '@/lib/auth/use-permissions';
+import { cn } from '@/lib/utils';
 
 export interface SalesMonitorToolbarProps {
   dateFrom: string;
@@ -44,6 +48,8 @@ export function SalesMonitorToolbar({
   isDetailExporting,
 }: SalesMonitorToolbarProps) {
   const brandsQuery = useSapBrandsGet();
+  const { can } = usePermissions();
+  const canManageSql = can(PERMISSIONS.SAP_QUERY_MANAGE);
   const brandOptions = useMemo(() => {
     const list = brandsQuery.data?.data.data;
     if (!list?.length) return SALES_BRAND_OPTIONS;
@@ -103,16 +109,27 @@ export function SalesMonitorToolbar({
         {isDetailExporting ? 'Đang xuất Excel...' : 'Xuất file chi tiết (Excel)'}
       </Button>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onToggleDocStatus}
-        className="ml-auto gap-1.5"
-      >
-        {showDocStatus ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-        {showDocStatus ? 'Ẩn bảng chứng từ treo' : 'Hiện bảng chứng từ treo'}
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        {canManageSql && (
+          <Link
+            href="/admin/sap-queries?flow=ban"
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'gap-1.5')}
+          >
+            <Settings className="size-3.5" />
+            ⚙ Quản lý SQL
+          </Link>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onToggleDocStatus}
+          className="gap-1.5"
+        >
+          {showDocStatus ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          {showDocStatus ? 'Ẩn bảng chứng từ treo' : 'Hiện bảng chứng từ treo'}
+        </Button>
+      </div>
     </div>
   );
 }

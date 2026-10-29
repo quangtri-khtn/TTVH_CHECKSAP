@@ -164,13 +164,15 @@ export function formatQueryOrderBadge(sortOrder: number): string {
 }
 
 export function countQueriesByFlow(queries: readonly SapQuerySummaryDto[]): SapQueryFlowCounts {
-  let banTotal = 0,
-    traTotal = 0,
-    banCustomized = 0,
-    traCustomized = 0;
+  let banTotal = 0, traTotal = 0, banCustomized = 0, traCustomized = 0;
   for (const q of queries) {
-    if (q.flow === 'ban') (banTotal++, q.isCustomized && banCustomized++);
-    else if (q.flow === 'tra') (traTotal++, q.isCustomized && traCustomized++);
+    if (q.flow === 'ban') {
+      banTotal++;
+      if (q.isCustomized) banCustomized++;
+    } else if (q.flow === 'tra') {
+      traTotal++;
+      if (q.isCustomized) traCustomized++;
+    }
   }
   return { banTotal, traTotal, banCustomized, traCustomized };
 }
@@ -257,27 +259,28 @@ export function computeLineDiff(originalSql: string, currentSql: string): SqlLin
   const normCurr = normalizeSqlText(currentSql);
   const origLines = normOrig ? normOrig.split('\n') : [];
   const currLines = normCurr ? normCurr.split('\n') : [];
-  const m = origLines.length,
-    n = currLines.length;
+  const m = origLines.length, n = currLines.length;
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
-      dp[i]![j] =
-        origLines[i] === currLines[j] ? 1 + (dp[i + 1]?.[j + 1] ?? 0) : Math.max(dp[i + 1]?.[j] ?? 0, dp[i]?.[j + 1] ?? 0);
+      dp[i]![j] = origLines[i] === currLines[j] ? 1 + (dp[i + 1]?.[j + 1] ?? 0) : Math.max(dp[i + 1]?.[j] ?? 0, dp[i]?.[j + 1] ?? 0);
     }
   }
   const lines: SqlDiffLine[] = [];
-  let addedCount = 0,
-    removedCount = 0,
-    i = 0,
-    j = 0;
+  let addedCount = 0, removedCount = 0, i = 0, j = 0;
   while (i < m && j < n) {
-    if (origLines[i] === currLines[j]) lines.push({ type: 'same', text: origLines[i]!, oldLineNo: ++i, newLineNo: ++j });
-    else if ((dp[i + 1]?.[j] ?? 0) >= (dp[i]?.[j + 1] ?? 0)) (lines.push({ type: 'removed', text: origLines[i]!, oldLineNo: ++i }), removedCount++);
-    else (lines.push({ type: 'added', text: currLines[j]!, newLineNo: ++j }), addedCount++);
+    if (origLines[i] === currLines[j]) {
+      lines.push({ type: 'same', text: origLines[i]!, oldLineNo: ++i, newLineNo: ++j });
+    } else if ((dp[i + 1]?.[j] ?? 0) >= (dp[i]?.[j + 1] ?? 0)) {
+      lines.push({ type: 'removed', text: origLines[i]!, oldLineNo: ++i });
+      removedCount++;
+    } else {
+      lines.push({ type: 'added', text: currLines[j]!, newLineNo: ++j });
+      addedCount++;
+    }
   }
-  while (i < m) (lines.push({ type: 'removed', text: origLines[i]!, oldLineNo: ++i }), removedCount++);
-  while (j < n) (lines.push({ type: 'added', text: currLines[j]!, newLineNo: ++j }), addedCount++);
+  while (i < m) { lines.push({ type: 'removed', text: origLines[i]!, oldLineNo: ++i }); removedCount++; }
+  while (j < n) { lines.push({ type: 'added', text: currLines[j]!, newLineNo: ++j }); addedCount++; }
   return { lines, addedCount, removedCount, hasChanges: addedCount > 0 || removedCount > 0 };
 }
 

@@ -2,6 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { Database, History } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RequirePermission } from '@/features/auth/components/require-permission';
 import { PERMISSIONS } from '@/lib/auth/permission-keys';
@@ -62,6 +65,8 @@ function SapQueriesStudioContent() {
     () => groupQueriesByFlowAndStage(allQueries, activeFlow, search),
     [allQueries, activeFlow, search],
   );
+  const totalCustomized = flowCounts.banCustomized + flowCounts.traCustomized;
+  const totalQueries = (flowCounts.banTotal + flowCounts.traTotal) || 25;
 
   useEffect(() => {
     if (detail) {
@@ -159,19 +164,41 @@ function SapQueriesStudioContent() {
   );
 
   return (
-    <div className="flex flex-1 flex-col gap-4">
-      <div>
-        <h1 className="font-heading text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-          Quản trị 25 Câu Truy vấn SAP HANA
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Chỉnh sửa Full SQL cho Monitor Luồng Bán (13 câu) &amp; Monitor Luồng
-          Trả (12 câu), kiểm tra Hợp đồng Cột trên SAP thật trước khi Xuất bản
-          và hỗ trợ hoàn tác 1 click.
-        </p>
+    <div className="flex flex-1 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3.5 py-2 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <Database className="size-4 text-primary" />
+          <h1 className="font-heading text-sm font-bold tracking-tight text-foreground sm:text-base">
+            Quản trị 25 Câu Truy vấn SAP HANA
+          </h1>
+          <span className="hidden text-xs text-muted-foreground md:inline">
+            · Luồng Bán (13 câu) &amp; Luồng Trả (12 câu) · Kiểm định Hợp đồng Cột &amp; Hoàn tác 1 click
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <Badge variant="outline" className="font-mono text-xs font-semibold">
+            Đã tùy chỉnh: {totalCustomized}/{totalQueries}
+          </Badge>
+          <Badge variant="secondary" className="font-mono text-xs">
+            Bản gốc v1: {Math.max(0, totalQueries - totalCustomized)}/{totalQueries}
+          </Badge>
+          {detail && (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => setHistoryOpen(true)}
+              className="gap-1"
+            >
+              <History className="size-3.5" />
+              <span>Lịch sử {detail.key} (v{detail.currentVersionNo})</span>
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start">
         <SapQueriesSidebarList
           activeFlow={activeFlow}
           onFlowChange={handleFlowChange}
@@ -184,15 +211,19 @@ function SapQueriesStudioContent() {
           isLoading={listQuery.isLoading}
         />
 
-        <div className="min-w-0 flex-1 space-y-4">
+        <div className="min-w-0 flex-1 space-y-3">
           {detailQuery.isLoading || !detail ? (
             <div className="space-y-3">
-              <Skeleton className="h-36 w-full rounded-lg" />
-              <Skeleton className="h-80 w-full rounded-lg" />
+              <Skeleton className="h-32 w-full rounded-lg" />
+              <Skeleton className="h-72 w-full rounded-lg" />
             </div>
           ) : (
             <>
-              <SapQueryPassportHeader detail={detail} currentSql={currentSql} />
+              <SapQueryPassportHeader
+                detail={detail}
+                currentSql={currentSql}
+                onCopyToken={copySqlToClipboard}
+              />
 
               <SapQuerySqlEditor
                 detail={detail}
@@ -213,6 +244,7 @@ function SapQueriesStudioContent() {
               <SapQueryReviewPanel
                 reviewResult={reviewResult}
                 currentSql={currentSql}
+                activeSql={detail.activeSql}
                 lastReviewedSql={lastReviewedSql}
                 changeNote={changeNote}
                 onChangeNote={setChangeNote}

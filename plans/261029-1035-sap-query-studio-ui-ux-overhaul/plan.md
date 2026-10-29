@@ -1,7 +1,7 @@
 ---
 title: "Đại tu UI/UX SQL Query Studio (/admin/sap-queries) — Split-Workbench, SQL IDE Editor & Tabbed Review"
 description: "Khắc phục triệt để 5 điểm nghẽn UX-01..UX-05 từ báo cáo kiểm định thực tế: bố cục Split-Workbench không trôi, Sidebar phân màu nhóm, Passport không cắt cột hỗ trợ click-to-copy, SQL Editor có số dòng + tô màu cú pháp/biến + thanh tiến trình OPENQUERY, Thanh Xuất bản đặt ngay trên đầu kèm 3 Tab kết quả Review, và mở rộng Drawer Lịch sử."
-status: in-progress
+status: completed
 priority: P1
 effort: 3.0h
 branch: main
@@ -27,7 +27,7 @@ Dựa trên báo cáo kiểm định thực nghiệm `plans/261029-0154-sap-quer
 | Phase | File chi tiết | Trọng tâm bàn giao | Ước lượng | Phụ thuộc | Trạng thái |
 |---|---|---|---:|:---:|:---:|
 | 1 | [Phase 1: Workbench Layout, Sidebar Phân Màu, Interactive Passport & SQL IDE Editor](./phase-01-workbench-sidebar-header-editor.md) | Domain helpers phân màu/tokenize SQL, Sidebar `sticky` có lọc nhanh theo Nhóm & dải màu ngữ nghĩa, Passport Header gọn hiển thị trọn vẹn cột bắt buộc + click-to-copy, SQL Editor có Gutter số dòng + Highlight SQL/biến + Thanh tiến trình OPENQUERY | 1.5h | Không có | Completed |
-| 2 | [Phase 2: Top Publish Bar, Tabbed Review Panel, History Sheet Rộng & Kiểm Định Build](./phase-02-review-tabs-history-sheet-verify.md) | Đưa thanh Ghi chú & Xuất bản lên đầu `SapQueryReviewPanel`, chia kết quả Review thành 3 Tab (`Hợp đồng Cột & An toàn`, `Dữ liệu Preview 50 dòng`, `Diff v1`), mở rộng `SapQueryHistorySheet` (`sm:max-w-4xl`, `pr-8`), kết nối `page.tsx`, pass 100% test/typecheck/build | 1.5h | Phase 1 | Pending |
+| 2 | [Phase 2: Top Publish Bar, Tabbed Review Panel, History Sheet Rộng & Kiểm Định Build](./phase-02-review-tabs-history-sheet-verify.md) | Đưa thanh Ghi chú & Xuất bản lên đầu `SapQueryReviewPanel`, chia kết quả Review thành 3 Tab (`Hợp đồng Cột & An toàn`, `Dữ liệu Preview 50 dòng`, `Diff v1`), mở rộng `SapQueryHistorySheet` (`sm:max-w-4xl`, `pr-8`), kết nối `page.tsx`, pass 100% test/typecheck/build | 1.5h | Phase 1 | Completed |
 
 ---
 
